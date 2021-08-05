@@ -1,0 +1,4 @@
+*.csv
+*.txt
+*.ipynb**
+__pycache__
