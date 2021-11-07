@@ -13,6 +13,18 @@ Simulate scenarios and find the best portfolio.
 1. Download the repository
 2. Install dependencies
 3. Open portfolio.py
-3. Set your own stocks simbols
-4. Run the simulation
-5. Invest or reject
+4. Set your own stocks simbols
+5. Run the simulation
+6. Invest or reject
+
+#Install python dependencies:
+
+```bash
+pip install -r ./requirements.txt
+```
+
+Run the following command to start
+
+```bash
+python portafolio.py
+```
