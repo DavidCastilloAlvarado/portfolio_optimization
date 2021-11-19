@@ -11,8 +11,11 @@ from simulation import print_rendimiento
 WEEK = False
 MONTH = False
 MONTOUSD = 5000
-shares = ['GOOG', 'AAPL', 'MSFT', 'AMZN','ACN',]# '0700.HK']
-DAYS = 365
+shares = ['GOOG', 'AAPL', 'MSFT', 'AMZN',
+          'ACN', 'TREX', 'COIN', 'TSLA']  # '0700.HK']
+low_up_bound = [-0.01, -0.01, -0.01, -0.01, -0.0, -0.0, -0.0, -0.0] + \
+    [0.5, 0.5, 0.5, 0.5, 0.8, 0.5, 0.5, 0.5]
+DAYS = 30*6
 
 
 def str_to_datetime(col):
@@ -94,13 +97,19 @@ options["show_progress"] = False
 
 # %%
 n_prices = len(data.columns.tolist())
+g1 = np.diag([-1.0]*n_prices)
+g2 = np.diag([1.0]*n_prices)
+
 n = mean_returns.shape[0]
 P = matrix(cov_returns)
 q = matrix(0.0, (n, 1))
-G = matrix(np.diag([-1.0]*n_prices))
-h = matrix(0.0, (n, 1))
+G = matrix(np.append(g1, g2, 0))
+#h = matrix(0.0, (n, 1))
+h = matrix(np.stack([[float(i)] for i in low_up_bound]))
 A = matrix(1.0, (1, n))
 b = matrix(1.0)
+
+
 # %%
 # Calculamos la solucion
 sol = qp(P, q, G, h, A, b)
@@ -123,7 +132,7 @@ print("Portafolio return: {:.4%} -> {} USD".format(min_std_return,
       round(MONTOUSD*min_std_return, 2)))
 print("Portafolio standard deviation: {:.4%} -> {} USD".format(
     min_std, round(MONTOUSD*min_std, 2)))
-print_rendimiento(MONTOUSD,DAYS, min_std_return,min_std,4000 )
+print_rendimiento(MONTOUSD, DAYS, min_std_return, min_std, 4000)
 # %%
 # Foronterda eficiente
 max_return = np.max(mean_returns)
