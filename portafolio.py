@@ -23,7 +23,7 @@ shares = ['GOOG', 'AAPL', 'MSFT', 'AMZN',
 low_up_bound = [-0.00, -0.00, -0.00, -0.00, -0.0, -0.0, -0.0, ] + \
     [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, ]
 DAYS = 30*12
-RISK_FREE = 0
+RISK_FREE = 0.02
 # https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/MSFT?lang=en-US&region=US&symbol=MSFT&padTimeSeries=true&type=trailingMarketCap&period1=493590046&period2=1637385555
 
 
@@ -90,11 +90,11 @@ def bulk_stocks(shares):
         else:
             temp = load_table(share, init_time, end_time)
             data = data.merge(temp, on=['Date'])
-    #     caps.append(get_capitalization(share, init_time, end_time))
+        caps.append(get_capitalization(share, init_time, end_time))
     # print(np.diag(caps))
-    # weights_cap = 1 - np.diag(caps)/sum(caps)
+    w_caps = np.array(caps)/sum(caps)
     # print(weights_cap)
-    return data
+    return data, w_caps
 
 # Calculates portfolio mean return
 
@@ -128,7 +128,7 @@ def solve_weights(R, C, rf):
     n = len(R)
     W = np.ones([n])/n						# start optimization with equal weights
     # weights for boundaries between 0%..100%. No leverage, no shorting
-    b_ = [(0.02, 1.) for i in range(n)]
+    b_ = [(0.00, 1.) for i in range(n)]
     c_ = ({'type': 'eq', 'fun': lambda W: np.sum(W)-1.}
           )  # Sum of weights must be 100%
     optimized = scipy.optimize.minimize(
@@ -140,7 +140,7 @@ def solve_weights(R, C, rf):
     return w
 
 
-data = bulk_stocks(shares)
+data, w_caps = bulk_stocks(shares)
 
 if WEEK:
     data['step'] = data.Date.apply(lambda x: str(
@@ -171,12 +171,39 @@ mean_returns = np.array(returns.mean())
 
 cov_returns = np.array(returns.cov())
 
+# para todo el periodo de analisis
 mean_returns = (1+mean_returns)**RECORDS - 1
 cov_returns = cov_returns * (RECORDS)
 
+# %%
+print('Días de análisis : ', DAYS)
+print('Cantidad de records analizados: ', RECORDS)
+print('Monto total de inversión: {} usd'.format(MONTOUSD))
+
 # %% weights of tangency portfolio with respect to sharpe ratio maximization
-print("#"*50)
+print("{} Mean-Variance Optimization (historical) {}".format("#"*10, "#"*10))
 weights = solve_weights(mean_returns.copy(), cov_returns.copy(), RISK_FREE)
+mean, var = port_mean_var(weights, mean_returns.copy(), cov_returns.copy(),)
+std = np.sqrt(var)
+for name, fp in zip(names, weights):
+    print('{} : {:.2f}% -> {} USD'.format(name, fp*100, round(fp*MONTOUSD, 2)))
+
+print("Portafolio return: {:.4%} -> {} USD".format(mean,
+      round(MONTOUSD*mean, 2)))
+print("Portafolio standard deviation: {:.4%} -> {} USD".format(
+    std, round(MONTOUSD*std, 2)))
+
+
+# %% print_rendimiento(MONTOUSD, DAYS, mean, var, 4000)
+# Black litterman reverse optimization
+print("{} Black-litterman reverse optimization {}".format("#"*10, "#"*10))
+# Calculate portfolio historical return and variance
+mean, var = port_mean_var(w_caps, mean_returns.copy(), cov_returns.copy())
+
+lmb = (mean - RISK_FREE) / var  # Calculate risk aversion
+# Calculate equilibrium excess returns
+Pi = np.dot(np.dot(lmb, cov_returns.copy()), w_caps)
+weights = solve_weights(Pi + RISK_FREE, cov_returns.copy(), RISK_FREE)
 mean, var = port_mean_var(weights, mean_returns.copy(), cov_returns.copy(),)
 std = np.sqrt(var)
 for name, fp in zip(names, weights):
@@ -188,6 +215,8 @@ print("Portafolio standard deviation: {:.4%} -> {} USD".format(
     std, round(MONTOUSD*std, 2)))
 # print_rendimiento(MONTOUSD, DAYS, mean, var, 4000)
 print("#"*50)
+
+
 # # Aplicamos los pesos de la capitalizacion a la matriz de covarianza
 # cov_returns = np.matmul(
 #     np.matmul(weights, cov_returns), np.transpose(weights))
@@ -219,10 +248,8 @@ b = matrix(1.0)
 sol = qp(P, q, G, h, A, b)
 pesos = sol["x"]
 porcent = 100*pesos.T
-print('Días de análisis : ', DAYS)
-print('Cantidad de records analizados: ', RECORDS)
-print('Monto total de inversión: {} usd'.format(MONTOUSD))
 # %%
+print("{} Minimal Variance Optimization {}".format("#"*10, "#"*10))
 for name, fp in zip(names, porcent):
     print('{} : {:.2f}% -> {} USD'.format(name, fp, round(fp*MONTOUSD/100, 2)))
 
