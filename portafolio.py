@@ -8,14 +8,23 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta, timezone
 from simulation import print_rendimiento
+from urllib.request import urlopen, Request
+import json
+
+from numpy.linalg import inv, pinv
+import scipy.optimize
+import random
+
 WEEK = False
 MONTH = False
-MONTOUSD = 5000
+MONTOUSD = 4900
 shares = ['GOOG', 'AAPL', 'MSFT', 'AMZN',
-          'ACN', 'TREX', 'COIN', 'TSLA']  # '0700.HK']
-low_up_bound = [-0.01, -0.01, -0.01, -0.01, -0.0, -0.0, -0.0, -0.0] + \
-    [0.5, 0.5, 0.5, 0.5, 0.8, 0.5, 0.5, 0.5]
-DAYS = 30*6
+          'ACN', 'TREX', 'TSLA']  # '0700.HK']
+low_up_bound = [-0.00, -0.00, -0.00, -0.00, -0.0, -0.0, -0.0, ] + \
+    [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, ]
+DAYS = 30*12
+RISK_FREE = 0.00
+# https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/MSFT?lang=en-US&region=US&symbol=MSFT&padTimeSeries=true&type=trailingMarketCap&period1=493590046&period2=1637385555
 
 
 def str_to_datetime(col):
@@ -28,10 +37,34 @@ def load_table(name, init_time, end_time):
     url = 'https://query1.finance.yahoo.com/v7/finance/download/'+name + \
         '?period1=' + str(init_time)+'&period2='+str(end_time) + \
         '&interval=1d&events=history&includeAdjustedClose=true'
-    table = pd.read_csv(url, usecols=['Date', 'Close'],)
+    table = pd.read_csv(url, )  # usecols=['Date', 'Close'],)
+    table = table[['Date', 'Close']]
     table.Date = str_to_datetime(table.Date)
     table.rename(columns={'Close': name.split('.')[0]}, inplace=True)
     return table
+
+
+def request_url(url):
+    if not url.startswith("http"):
+        raise RuntimeError(
+            "Incorrect and possibly insecure protocol in url " + url)
+
+    httprequest = Request(url, headers={"Accept": "application/json"})
+
+    with urlopen(httprequest) as response:
+        if response.status == 200:
+            val = response.read().decode()
+            return json.loads(val)['timeseries']['result'][0]['trailingMarketCap'][0]['reportedValue']['raw']
+        else:
+            raise RuntimeError("Error in request " + url)
+
+
+def get_capitalization(share, init_time, end_time):
+    url = 'https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/' + share + \
+        '?lang=en-US&region=US&symbol='+share+'&padTimeSeries=true&type=trailingMarketCap&' + \
+        'period1=' + str(init_time)+'&period2='+str(end_time)
+    capitalization = request_url(url)
+    return capitalization
 
 
 def get_unix_time():
@@ -49,14 +82,62 @@ def get_unix_time():
 
 def bulk_stocks(shares):
     init_time, end_time = get_unix_time()
+    caps = []
     for i, share in enumerate(shares):
         if i == 0:
             data = load_table(share, init_time, end_time)
+
         else:
             temp = load_table(share, init_time, end_time)
             data = data.merge(temp, on=['Date'])
-    data.dtypes
+    #     caps.append(get_capitalization(share, init_time, end_time))
+    # print(np.diag(caps))
+    # weights_cap = 1 - np.diag(caps)/sum(caps)
+    # print(weights_cap)
     return data
+
+# Calculates portfolio mean return
+
+
+def port_mean(W, R):
+    return np.sum(R*W)
+
+# Calculates portfolio variance of returns
+
+
+def port_var(W, C):
+    return np.dot(np.dot(W, C), W)
+
+# Combination of the two functions above - mean and variance of returns calculation
+
+
+def port_mean_var(W, R, C):
+    return port_mean(W, R), port_var(W, C)
+
+# Given risk-free rate, assets returns and covariances, this
+# function calculates weights of tangency portfolio with respect to
+# sharpe ratio maximization
+
+
+def solve_weights(R, C, rf):
+    def fitness(W, R, C, rf):
+        # calculate mean/variance of the portfolio
+        mean, var = port_mean_var(W, R, C)
+        util = (mean - rf) / np.sqrt(var)		# utility = Sharpe ratio
+        return 1/util						# maximize the utility, minimize its inverse value
+    n = len(R)
+    W = np.ones([n])/n						# start optimization with equal weights
+    # weights for boundaries between 0%..100%. No leverage, no shorting
+    b_ = [(0., 1.) for i in range(n)]
+    c_ = ({'type': 'eq', 'fun': lambda W: np.sum(W)-1.}
+          )  # Sum of weights must be 100%
+    optimized = scipy.optimize.minimize(
+        fitness, W, (R, C, rf), method='SLSQP', constraints=c_, bounds=b_)
+    if not optimized.success:
+        raise BaseException(optimized.message)
+    # w = np.diag(optimized.x)
+    w = optimized.x
+    return w
 
 
 data = bulk_stocks(shares)
@@ -87,9 +168,28 @@ returns = data.pct_change(periods=-1)
 # %%
 # Calculamos las medias de cada columna, y la matriz de covarianza entre ellas
 mean_returns = np.array(returns.mean())
+mean_returns = (1+mean_returns)**RECORDS - 1
 cov_returns = np.array(returns.cov())
-returns.describe()
-# print(cov_returns)
+cov_returns = cov_returns * (RECORDS)
+
+# %% weights of tangency portfolio with respect to sharpe ratio maximization
+print("#"*50)
+weights = solve_weights(mean_returns.copy(), cov_returns.copy(), RISK_FREE)
+mean, var = port_mean_var(weights, mean_returns.copy(), cov_returns.copy(),)
+for name, fp in zip(names, weights):
+    print('{} : {:.2f}% -> {} USD'.format(name, fp*100, round(fp*MONTOUSD, 2)))
+
+print("Portafolio return: {:.4%} -> {} USD".format(mean,
+      round(MONTOUSD*mean, 2)))
+print("Portafolio standard deviation: {:.4%} -> {} USD".format(
+    var, round(MONTOUSD*var, 2)))
+print("#"*50)
+# # Aplicamos los pesos de la capitalizacion a la matriz de covarianza
+# cov_returns = np.matmul(
+#     np.matmul(weights, cov_returns), np.transpose(weights))
+# # Aplicamos los pesos de la capitalizacion a la media de retornos
+# mean_returns = np.matmul(mean_returns, np.transpose(weights))
+
 
 # %%
 # OPTIMIZACION
@@ -132,7 +232,7 @@ print("Portafolio return: {:.4%} -> {} USD".format(min_std_return,
       round(MONTOUSD*min_std_return, 2)))
 print("Portafolio standard deviation: {:.4%} -> {} USD".format(
     min_std, round(MONTOUSD*min_std, 2)))
-print_rendimiento(MONTOUSD, DAYS, min_std_return, min_std, 4000)
+# print_rendimiento(MONTOUSD, DAYS, min_std_return, min_std, 4000)
 # %%
 # Foronterda eficiente
 max_return = np.max(mean_returns)
