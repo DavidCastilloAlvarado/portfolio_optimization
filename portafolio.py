@@ -23,7 +23,7 @@ shares = ['GOOG', 'AAPL', 'MSFT', 'AMZN',
 low_up_bound = [-0.00, -0.00, -0.00, -0.00, -0.0, -0.0, -0.0, ] + \
     [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, ]
 DAYS = 30*12
-RISK_FREE = 0.00
+RISK_FREE = 0
 # https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/MSFT?lang=en-US&region=US&symbol=MSFT&padTimeSeries=true&type=trailingMarketCap&period1=493590046&period2=1637385555
 
 
@@ -128,7 +128,7 @@ def solve_weights(R, C, rf):
     n = len(R)
     W = np.ones([n])/n						# start optimization with equal weights
     # weights for boundaries between 0%..100%. No leverage, no shorting
-    b_ = [(0., 1.) for i in range(n)]
+    b_ = [(0.02, 1.) for i in range(n)]
     c_ = ({'type': 'eq', 'fun': lambda W: np.sum(W)-1.}
           )  # Sum of weights must be 100%
     optimized = scipy.optimize.minimize(
@@ -168,21 +168,25 @@ returns = data.pct_change(periods=-1)
 # %%
 # Calculamos las medias de cada columna, y la matriz de covarianza entre ellas
 mean_returns = np.array(returns.mean())
-mean_returns = (1+mean_returns)**RECORDS - 1
+
 cov_returns = np.array(returns.cov())
+
+mean_returns = (1+mean_returns)**RECORDS - 1
 cov_returns = cov_returns * (RECORDS)
 
 # %% weights of tangency portfolio with respect to sharpe ratio maximization
 print("#"*50)
 weights = solve_weights(mean_returns.copy(), cov_returns.copy(), RISK_FREE)
 mean, var = port_mean_var(weights, mean_returns.copy(), cov_returns.copy(),)
+std = np.sqrt(var)
 for name, fp in zip(names, weights):
     print('{} : {:.2f}% -> {} USD'.format(name, fp*100, round(fp*MONTOUSD, 2)))
 
 print("Portafolio return: {:.4%} -> {} USD".format(mean,
       round(MONTOUSD*mean, 2)))
 print("Portafolio standard deviation: {:.4%} -> {} USD".format(
-    var, round(MONTOUSD*var, 2)))
+    std, round(MONTOUSD*std, 2)))
+# print_rendimiento(MONTOUSD, DAYS, mean, var, 4000)
 print("#"*50)
 # # Aplicamos los pesos de la capitalizacion a la matriz de covarianza
 # cov_returns = np.matmul(
