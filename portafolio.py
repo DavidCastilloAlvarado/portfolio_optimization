@@ -23,7 +23,7 @@ MONTOUSD = 4900
 
 shares = ['GOOG', 'AAPL', 'MSFT', 'AMZN',
           'ACN', 'TREX', 'TSLA', 'NVDA', 'AMD']  # '0700.HK']
-shares_view = ['MSFT', 'AMD', 'AAPL', 'ACN']
+shares_view = [['TSLA', 'NVDA'], ['ACN', 'AAPL'], ]
 low_up_bound = [0.0 for _ in shares] + \
     [0.5 for _ in shares]
 
@@ -92,6 +92,8 @@ def bulk_stocks(shares, shares_view):
     init_time, end_time = get_unix_time()
     caps = []
     forecast = []
+    share_view2 = []
+    views = []
     for i, share in enumerate(shares):
         if i == 0:
             data = load_table(share, init_time, end_time)
@@ -102,11 +104,16 @@ def bulk_stocks(shares, shares_view):
         caps.append(get_capitalization(share, init_time, end_time))
         change_12m = (forecast_12months(share) -
                       data.iloc[-1][share])/data.iloc[-1][share]
-        if share in shares_view:
+        if share in [item for sublist in shares_view for item in sublist]:
+            share_view2.append(share)
             forecast.append(change_12m)
     # print(np.diag(caps))
     w_caps = np.array(caps)/sum(caps)
-    views = create_views(shares_view, forecast)
+    for share1, share2 in shares_view:
+        forecast_ii = [forecast[share_view2.index(
+            share1)], forecast[share_view2.index(share2)]]
+        view = create_views([share1, share2], forecast_ii)
+        views = views + view
     # print(weights_cap)
     return data, w_caps, views
 
