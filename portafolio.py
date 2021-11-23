@@ -23,9 +23,10 @@ MONTOUSD = 4900
 
 shares = ['GOOG', 'AAPL', 'MSFT', 'AMZN',
           'ACN', 'TREX', 'TSLA', 'NVDA', 'AMD']  # '0700.HK']
-shares_view = [['TSLA', 'NVDA'], ['ACN', 'AAPL'], ]
-low_up_bound = [0.0 for _ in shares] + \
-    [0.5 for _ in shares]
+shares_view = [['TSLA', 'NVDA'], ['ACN', 'AMZN'],
+               ['AAPL', 'AMZN'], ['TREX', 'NVDA']]
+low_up_bound = [-0.02 for _ in shares] + \
+    [2.0/len(shares) for _ in shares]
 
 DAYS = 30*12
 RISK_FREE = 0.02
