@@ -15,16 +15,24 @@ from numpy.linalg import inv, pinv
 import scipy.optimize
 import random
 
+from market_tools import forecast_12months, create_views, create_views_and_link_matrix
+
 WEEK = False
 MONTH = False
 MONTOUSD = 4900
+
 shares = ['GOOG', 'AAPL', 'MSFT', 'AMZN',
-          'ACN', 'TREX', 'TSLA']  # '0700.HK']
-low_up_bound = [-0.00, -0.00, -0.00, -0.00, -0.0, -0.0, -0.0, ] + \
-    [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, ]
+          'ACN', 'TREX', 'TSLA', 'NVDA', 'AMD']  # '0700.HK']
+shares_view = ['MSFT', 'AMD', 'AAPL', 'ACN']
+low_up_bound = [0.0 for _ in shares] + \
+    [0.5 for _ in shares]
+
 DAYS = 30*12
 RISK_FREE = 0.02
+TAU = 0.025
 # https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/MSFT?lang=en-US&region=US&symbol=MSFT&padTimeSeries=true&type=trailingMarketCap&period1=493590046&period2=1637385555
+
+# %% FUNCTIONS
 
 
 def str_to_datetime(col):
@@ -80,9 +88,10 @@ def get_unix_time():
     return init_time, end_time
 
 
-def bulk_stocks(shares):
+def bulk_stocks(shares, shares_view):
     init_time, end_time = get_unix_time()
     caps = []
+    forecast = []
     for i, share in enumerate(shares):
         if i == 0:
             data = load_table(share, init_time, end_time)
@@ -91,10 +100,15 @@ def bulk_stocks(shares):
             temp = load_table(share, init_time, end_time)
             data = data.merge(temp, on=['Date'])
         caps.append(get_capitalization(share, init_time, end_time))
+        change_12m = (forecast_12months(share) -
+                      data.iloc[-1][share])/data.iloc[-1][share]
+        if share in shares_view:
+            forecast.append(change_12m)
     # print(np.diag(caps))
     w_caps = np.array(caps)/sum(caps)
+    views = create_views(shares_view, forecast)
     # print(weights_cap)
-    return data, w_caps
+    return data, w_caps, views
 
 # Calculates portfolio mean return
 
@@ -140,7 +154,13 @@ def solve_weights(R, C, rf):
     return w
 
 
-data, w_caps = bulk_stocks(shares)
+# %% MAIN
+data, w_caps, views = bulk_stocks(shares, shares_view)
+
+# %%
+Q, P = create_views_and_link_matrix(shares, views)
+
+# %%
 
 if WEEK:
     data['step'] = data.Date.apply(lambda x: str(
@@ -205,6 +225,44 @@ lmb = (mean - RISK_FREE) / var  # Calculate risk aversion
 Pi = np.dot(np.dot(lmb, cov_returns.copy()), w_caps)
 weights = solve_weights(Pi + RISK_FREE, cov_returns.copy(), RISK_FREE)
 mean, var = port_mean_var(weights, mean_returns.copy(), cov_returns.copy(),)
+std = np.sqrt(var)
+for name, fp in zip(names, weights):
+    print('{} : {:.2f}% -> {} USD'.format(name, fp*100, round(fp*MONTOUSD, 2)))
+
+print("Portafolio return: {:.4%} -> {} USD".format(mean,
+      round(MONTOUSD*mean, 2)))
+print("Portafolio standard deviation: {:.4%} -> {} USD".format(
+    std, round(MONTOUSD*std, 2)))
+# print_rendimiento(MONTOUSD, DAYS, mean, var, 4000)
+print("#"*50)
+
+# %% print_rendimiento(MONTOUSD, DAYS, mean, var, 4000)
+# CONFIDENCE = .01
+# TAU = 0.02  # 1.0/(CONFIDENCE-1.0)
+# RISK_FREE = -0.002
+# # Black litterman reverse optimization
+print("{} Black-litterman Full Algorithms {}".format("#"*10, "#"*10))
+# Calculate portfolio historical return and variance
+mean, var = port_mean_var(w_caps, mean_returns.copy(), cov_returns.copy())
+#####
+lmb = (mean - RISK_FREE) / var  # Calculate risk aversion
+# Calculate equilibrium excess returns
+Pi = np.dot(np.dot(lmb, cov_returns.copy()), w_caps)
+
+####
+# Calculate omega - uncertainty matrix about views
+# 0.025 * P * C * transpose(P)
+C = cov_returns.copy()
+omega = np.dot(np.dot(np.dot(TAU, P), C), np.transpose(P))
+# Calculate equilibrium excess returns with views incorporated
+sub_a = np.linalg.inv(np.dot(TAU, C))
+sub_b = np.dot(np.dot(np.transpose(P), np.linalg.inv(omega)), P)
+sub_c = np.dot(np.linalg.inv(np.dot(TAU, C)), Pi)
+sub_d = np.dot(np.dot(np.transpose(P), np.linalg.inv(omega)), Q)
+Pi_adj = np.dot(np.linalg.inv(sub_a + sub_b), (sub_c + sub_d))
+
+weights = solve_weights(Pi_adj + RISK_FREE, cov_returns.copy(), RISK_FREE)
+mean, var = port_mean_var(weights, Pi_adj + RISK_FREE, cov_returns.copy(),)
 std = np.sqrt(var)
 for name, fp in zip(names, weights):
     print('{} : {:.2f}% -> {} USD'.format(name, fp*100, round(fp*MONTOUSD, 2)))
@@ -322,30 +380,3 @@ plt.ylabel("Retorno")
 plt.xlabel("Riesgo")
 plt.grid(True)
 plt.show(block=False)
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
