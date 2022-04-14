@@ -9,27 +9,35 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta, timezone
 from simulation import print_rendimiento
 from urllib.request import urlopen, Request
+import requests
 import json
 import tqdm
 from numpy.linalg import inv, pinv
 import scipy.optimize
 import random
-
-from market_tools import forecast_12months, create_views, create_views_and_link_matrix
+from bs4 import BeautifulSoup
+from market_tools import forecast_12months, create_views, create_views_and_link_matrix, MarketCapExtract
 
 WEEK = False
 MONTH = False
 MONTOUSD = 5900
 
-shares = ['GOOG', 'AAPL', 'MSFT', 'AMZN',
-          'ACN', 'TREX', 'TSLA', 'NVDA', 'AMD', 'V', 'FB', 'INTC']  # '0700.HK']
-shares_view = [['AAPL', 'TSLA'], ['ACN', 'AMZN'],
-               ['AAPL', 'ACN'], ['FB', 'INTC']]
-low_up_bound = [-0.02 for _ in shares] + \
-    [2.0/len(shares) for _ in shares]
+# shares = ['QQQ', 'SPY', 'VTI', 'VOO', 'VUG',
+#           ]  # '0700.HK'] 'ZION',
+shares = [
+    'FB', 'PHM', 'WY', 'LPX', 'QFIN', 'TER', 'TROW', 'INTU', 'TSM',  'NVO', 'JNJ', 'DHI', 'ACN',
+    'GOOG', 'AAPL', 'MSFT', 'AMZN',
+    'TREX', 'NVDA', 'AMD', 'V',  'INTC', 'NFLX', 'ADBE', 'MCD', 'PFE',
+]
+_shares = [
+    'DVN', 'MPC', 'USO', 'SU',
+]
+shares_view = []
+low_up_bound = [-0.005 for _ in shares] + \
+    [1 for _ in shares]  # 2.0/len(shares)
 
-DAYS = 360  # 30*12
-RISK_FREE = 0.02
+DAYS = 210  # 30*12
+RISK_FREE = -0.8
 TAU = 0.025
 # https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/MSFT?lang=en-US&region=US&symbol=MSFT&padTimeSeries=true&type=trailingMarketCap&period1=493590046&period2=1637385555
 
@@ -58,20 +66,42 @@ def request_url(url):
         raise RuntimeError(
             "Incorrect and possibly insecure protocol in url " + url)
 
-    httprequest = Request(url, headers={"Accept": "application/json"})
+    # httprequest = Request(url, headers={
+    #                       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9"})
+    r = requests.get(url, headers={
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+        "accept-language": "es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7",
+        "sec-ch-ua": "\" Not A;Brand\";v=\"99\", \"Chromium\";v=\"96\", \"Google Chrome\";v=\"96\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Linux\"",
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "none",
+        "sec-fetch-user": "?1",
+        "upgrade-insecure-requests": "1"
+    })
 
-    with urlopen(httprequest) as response:
+    if r.status_code != 200:
+        raise RuntimeError(
+            "Error in url " + url + " status code " + str(r.status_code))
+    val = r.text
+    return MarketCapExtract(val)
+
+    with urlopen(httprequest, ) as response:
         if response.status == 200:
             val = response.read().decode()
-            return json.loads(val)['timeseries']['result'][0]['trailingMarketCap'][0]['reportedValue']['raw']
+            return MarketCapExtract(val)
+            # print(json.loads(val)['timeseries']['result'][0])
+            # return json.loads(val)['timeseries']['result'][0]['trailingMarketCap'][0]['reportedValue']['raw']
         else:
             raise RuntimeError("Error in request " + url)
 
 
 def get_capitalization(share, init_time, end_time):
-    url = 'https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/' + share + \
-        '?lang=en-US&region=US&symbol='+share+'&padTimeSeries=true&type=trailingMarketCap&' + \
-        'period1=' + str(init_time)+'&period2='+str(end_time)
+    # url = 'https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/' + share + \
+    #     '?lang=en-US&region=US&symbol='+share+'&padTimeSeries=true&type=trailingMarketCap&' + \
+    #     'period1=' + str(init_time)+'&period2='+str(end_time)
+    url = f'https://finance.yahoo.com/quote/{share}?p={share}'
     capitalization = request_url(url)
     return capitalization
 
@@ -96,6 +126,7 @@ def bulk_stocks(shares, shares_view):
     share_view2 = []
     views = []
     for i, share in tqdm.tqdm(enumerate(shares), total=len(shares)):
+        print(share)
         if i == 0:
             data = load_table(share, init_time, end_time)
 
@@ -110,6 +141,7 @@ def bulk_stocks(shares, shares_view):
         share_view2.append(share)
         forecast.append(change_12m)
     # print(np.diag(caps))
+    # w_caps = np.array([1/len(share) for _ in share])
     w_caps = np.array(caps)/sum(caps)
     for share1, share2 in shares_view:
         forecast_ii = [forecast[share_view2.index(
@@ -201,8 +233,8 @@ mean_returns = np.array(returns.mean())
 cov_returns = np.array(returns.cov())
 
 # para todo el periodo de analisis
-mean_returns = (1+mean_returns)**RECORDS - 1
-cov_returns = cov_returns * (RECORDS)
+# mean_returns = (1+mean_returns)**RECORDS - 1
+# cov_returns = cov_returns * (RECORDS)
 
 # %%
 print('Días de análisis : ', DAYS)
@@ -242,54 +274,9 @@ print("Portafolio return: {:.4%} -> {} USD".format(mean,
       round(MONTOUSD*mean, 2)))
 print("Portafolio standard deviation: {:.4%} -> {} USD".format(
     std, round(MONTOUSD*std, 2)))
-# print_rendimiento(MONTOUSD, DAYS, mean, var, 4000)
+print_rendimiento(MONTOUSD, DAYS, mean, std, 4000)
+
 print("#"*50)
-
-# %% print_rendimiento(MONTOUSD, DAYS, mean, var, 4000)
-# CONFIDENCE = .01
-# TAU = 0.02  # 1.0/(CONFIDENCE-1.0)
-# RISK_FREE = -0.002
-# # Black litterman reverse optimization
-print("{} Black-litterman Full Algorithms {}".format("#"*10, "#"*10))
-# Calculate portfolio historical return and variance
-mean, var = port_mean_var(w_caps, mean_returns.copy(), cov_returns.copy())
-#####
-lmb = (mean - RISK_FREE) / var  # Calculate risk aversion
-# Calculate equilibrium excess returns
-Pi = np.dot(np.dot(lmb, cov_returns.copy()), w_caps)
-
-####
-# Calculate omega - uncertainty matrix about views
-# 0.025 * P * C * transpose(P)
-C = cov_returns.copy()
-omega = np.dot(np.dot(np.dot(TAU, P), C), np.transpose(P))
-# Calculate equilibrium excess returns with views incorporated
-sub_a = np.linalg.inv(np.dot(TAU, C))
-sub_b = np.dot(np.dot(np.transpose(P), np.linalg.inv(omega)), P)
-sub_c = np.dot(np.linalg.inv(np.dot(TAU, C)), Pi)
-sub_d = np.dot(np.dot(np.transpose(P), np.linalg.inv(omega)), Q)
-Pi_adj = np.dot(np.linalg.inv(sub_a + sub_b), (sub_c + sub_d))
-
-weights = solve_weights(Pi_adj + RISK_FREE, cov_returns.copy(), RISK_FREE)
-mean, var = port_mean_var(weights, Pi_adj + RISK_FREE, cov_returns.copy(),)
-std = np.sqrt(var)
-for name, fp in zip(names, weights):
-    print('{} : {:.2f}% -> {} USD'.format(name, fp*100, round(fp*MONTOUSD, 2)))
-
-print("Portafolio return: {:.4%} -> {} USD".format(mean,
-      round(MONTOUSD*mean, 2)))
-print("Portafolio standard deviation: {:.4%} -> {} USD".format(
-    std, round(MONTOUSD*std, 2)))
-# print_rendimiento(MONTOUSD, DAYS, mean, var, 4000)
-print("#"*50)
-
-
-# # Aplicamos los pesos de la capitalizacion a la matriz de covarianza
-# cov_returns = np.matmul(
-#     np.matmul(weights, cov_returns), np.transpose(weights))
-# # Aplicamos los pesos de la capitalizacion a la media de retornos
-# mean_returns = np.matmul(mean_returns, np.transpose(weights))
-
 
 # %%
 # OPTIMIZACION
@@ -304,7 +291,7 @@ n = mean_returns.shape[0]
 P = matrix(cov_returns)
 q = matrix(0.0, (n, 1))
 G = matrix(np.append(g1, g2, 0))
-#h = matrix(0.0, (n, 1))
+# h = matrix(0.0, (n, 1))
 h = matrix(np.stack([[float(i)] for i in low_up_bound]))
 A = matrix(1.0, (1, n))
 b = matrix(1.0)
@@ -330,62 +317,8 @@ print("Portafolio return: {:.4%} -> {} USD".format(min_std_return,
       round(MONTOUSD*min_std_return, 2)))
 print("Portafolio standard deviation: {:.4%} -> {} USD".format(
     min_std, round(MONTOUSD*min_std, 2)))
-# print_rendimiento(MONTOUSD, DAYS, min_std_return, min_std, 4000)
+print_rendimiento(MONTOUSD, DAYS, min_std_return, min_std, 4000)
 # %%
 # Foronterda eficiente
-max_return = np.max(mean_returns)
-print("Portafolio max return: {:.4%}".format(max_return))
-# dividimos el eje y de la frontera eficiente en 100 puntos
-m = 100
-returns = np.linspace(min_std_return, max_return, m)
-# print(returns[-10:])
-# %%
-risk_k = []
-k_values = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3]
-for k in k_values:
-    if k == 0:
-        n = mean_returns.shape[0]
-        P = matrix(cov_returns)
-        q = matrix(0.0, (n, 1))
-        G = matrix(np.diag([-1.0]*n_prices))
-        h = matrix(k, (n, 1))
-        A1 = matrix(1.0, (1, n))
-        A2 = matrix(mean_returns).T
-        A = matrix([A1, A2])
-    else:
-        n = mean_returns.shape[0]
-        P = matrix(cov_returns)
-        q = matrix(0.0, (n, 1))
-        G = matrix(np.diag([1.0]*n_prices))
-        h = matrix(k, (n, 1))
-        A1 = matrix(1.0, (1, n))
-        A2 = matrix(mean_returns).T
-        A = matrix([A1, A2])
-
-    risk = []
-    pesos_opt = np. zeros([m, n])
-    for i in range(m):
-        mu = returns[i]
-        b = matrix([1.0, mu])
-        sol = qp(P, q, G, h, A, b)
-        if sol["status"] == "optimal":
-            pesos = sol["x"]
-            pesos_opt[i, :] = np.array(pesos).flatten()
-            port_variance = dot(pesos, P*pesos)
-            port_std = np.sqrt(port_variance)
-            # port_return = dot(A2, pesos)
-            risk.append(port_std)
-    risk = risk[: -1]
-    risk_k.append(risk)
-
-# %%
-plt.figure(figsize=(15, 8))
-
-for ind, k in enumerate(k_values):
-    plt.plot(risk_k[ind], returns[: len(risk_k[ind])], label=str(k))
-plt.legend(loc='best')
-plt.title("Frontera eficiente")
-plt.ylabel("Retorno")
-plt.xlabel("Riesgo")
-plt.grid(True)
-plt.show(block=False)
+# max_return = np.max(mean_returns)
+# print("Portafolio max return: {:.4%}".format(max_return))
