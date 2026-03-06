@@ -43,7 +43,7 @@ def forecast_12months(stock):
     html = request_url(url)
 
     soup = bs(html, 'lxml')
-    secret = soup.select_one('#tr-stock-page-content > div.maxW1200.grow1.flexc__.flexc__.displayflex > div.minW80.z1.flexr__f.maxW1200.mobile_maxWparent > div._1HABim5jz41fqgmk1lBtqo.tr-box-ui.flexc__.w6.px0.displayflex.minHmedium.z0.mb7.pl4.ipad_pl2.ipad_w_pxscreen.ipad_minHauto.grow1.mobile_pr0.mobile_pl0.mobile_w12 > div.flexc__.mt3.bgwhite.displayflex.border1.borderColorwhite-8.shadow1.positionrelative.grow1 > div.w12.p0.displayflex.positionrelative.grow1 > div > div > div.w12.displayflex.ipad_w3.mobile_w12.mobile_flexcsc > div.displayinline-block.flexrcc.colorblack-5.fonth8_normal.ipad_lineHeight4.ipad_fontSize8.ml4.mt2.bl1_solid.pl4.borderColorgray-0.ipad_w8.mobile_order4.mobile_w12.mobile_pl0.mobile_pr3.mobile_bordernone.mobile_w_pxauto.mobile_mb3.mobile_mt4 > span.fontWeightsemibold.colorgray-1')
+    secret = soup.select_one('#tr-stock-page-content > div.maxW1200.grow1.flexcs_.flexcs_.displayflex > div.minW80.z1.flexr__f.maxW1200.mobile_maxWparent > div.zWTn2pJ2.tr-box-ui.flexcs_.w6.px0.displayflex.minHauto.z0.mb7.pl4.ipad_pl2.ipad_w_pxscreen.ipad_order1.ipad_mb5.grow1.mobile_pr0.mobile_pl0.mobile_w12.mobile_pt4.mobile_mb4.mobile_pb3 > div.flexcs_.bgwhite.mt3.displayflex.border1.borderColorwhite-8.shadow1.positionrelative.grow1 > div.w12.p0.displayflex.positionrelative.grow1 > div.flexcb_.bgwhite.h12.w12.px0.displayflex.positionrelative.py3 > div > div.w12.displayflex.ipad_w3.mobile_w12.mobile_flexcsc > div.displayinline-block.flexrcc.colorblack-5.fonth8_normal.ipad_lineHeight4.ipad_fontSize8.ml4.mt2.bl1_solid.pl4.borderColorgray-0.ipad_w8.mobile_order4.mobile_w12.mobile_pl0.mobile_pr3.mobile_bordernone.mobile_w_pxauto.mobile_mb3.mobile_mt4 > span.fontWeightsemibold.colorgray-1')
     forecast_val = secret.text
     forecast_val = forecast_val[1:].replace(",", "")
     return float(forecast_val)
@@ -52,8 +52,8 @@ def forecast_12months(stock):
 def MarketCapExtract(html):
 
     soup = bs(html, 'lxml')
-    secret = soup.select_one('#quote-summary > div.D\(ib\).W\(1\/2\).Bxz\(bb\).Pstart\(12px\).Va\(t\).ie-7_D\(i\).ie-7_Pos\(a\).smartphone_D\(b\).smartphone_W\(100\%\).smartphone_Pstart\(0px\).smartphone_BdB.smartphone_Bdc\(\$seperatorColor\) > table > tbody > tr:nth-child(1) > td.Ta\(end\).Fw\(600\).Lh\(14px\)')
-    marketcap = secret.text
+    secret = soup.select_one('#main-content-wrapper > section.quote-statistics-container.yf-1ic92hr.no-tabs > div > div > div > ul > li:nth-child(9) > span.value.yf-1qull9i > fin-streamer')
+    marketcap = secret.text.strip()
     size = marketcap[-1]
     if size == "B":
         return float(marketcap[:-1]) * 10**9

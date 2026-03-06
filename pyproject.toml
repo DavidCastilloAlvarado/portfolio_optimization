@@ -1,0 +1,32 @@
+[tool.poetry]
+package-mode = false
+
+[project]
+name = "portfolio-opt"
+version = "1.0.0"
+description = "This will create an optimized portfolio based on main and variance"
+authors = [
+    {name = "David Castillo", email = "dcastilloa@uni.pe"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas",
+    "matplotlib",
+    "tqdm",
+    "scipy",
+    "beautifulsoup4",
+    "lxml",
+    "requests",
+    "cvxopt","poethepoet"
+]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+
+[tool.poe.tasks]
+"opt" = "python portafolio.py"
+"opt-etf2" = "python portafolioEtfv2.py"
+"opt-etf3" = "python portafolioEtfv3.py"

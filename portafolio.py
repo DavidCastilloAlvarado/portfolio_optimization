@@ -14,17 +14,19 @@ import tqdm
 from numpy.linalg import inv, pinv
 import scipy.optimize
 import random
+import os
+import requests
 
-from market_tools import forecast_12months, create_views, create_views_and_link_matrix
+from market_tools import MarketCapExtract, forecast_12months, create_views, create_views_and_link_matrix
 
 WEEK = False
 MONTH = False
 MONTOUSD = 5900
 
 shares = ['GOOG', 'AAPL', 'MSFT', 'AMZN',
-          'ACN', 'TREX', 'TSLA', 'NVDA', 'AMD', 'V', 'FB', 'INTC']  # '0700.HK']
+          'ACN', 'TREX', 'TSLA', 'NVDA', 'AMD', 'V', 'META', 'INTC']  # '0700.HK']
 shares_view = [['AAPL', 'TSLA'], ['ACN', 'AMZN'],
-               ['AAPL', 'ACN'], ['FB', 'INTC']]
+               ['AAPL', 'ACN'], ['META', 'INTC']]
 low_up_bound = [-0.02 for _ in shares] + \
     [2.0/len(shares) for _ in shares]
 
@@ -43,13 +45,44 @@ def str_to_datetime(col):
 
 
 def load_table(name, init_time, end_time):
-    url = 'https://query1.finance.yahoo.com/v7/finance/download/'+name + \
-        '?period1=' + str(init_time)+'&period2='+str(end_time) + \
-        '&interval=1d&events=history&includeAdjustedClose=true'
-    table = pd.read_csv(url, )  # usecols=['Date', 'Close'],)
-    table = table[['Date', 'Close']]
-    table.Date = str_to_datetime(table.Date)
-    table.rename(columns={'Close': name.split('.')[0]}, inplace=True)
+    # Ensure temp directory exists
+    os.makedirs("temp", exist_ok=True)
+
+    # Define cache filename (name_day)
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    cache_file = f"temp/{name}_{today_str}.csv"
+
+    # If file exists, load from cache
+    if os.path.exists(cache_file):
+        return pd.read_csv(cache_file, parse_dates=["Date"])
+
+    # Otherwise fetch from API
+    url = "https://query1.finance.yahoo.com/v8/finance/chart/"+name + \
+        "?period1=" + str(init_time)+"&period2="+str(end_time) + \
+        "&interval=1d"
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+    }
+    response = requests.get(url, headers=headers, timeout=10)
+    response.raise_for_status()
+    data = response.json()
+    
+    result = data["chart"]["result"][0]
+    timestamps = result["timestamp"]
+    closes = result["indicators"]["quote"][0]["close"]
+
+    # Convert timestamps to readable datetime
+    dates = [datetime.fromtimestamp(ts, tz=timezone.utc) for ts in timestamps]
+
+    # Build dataframe with only Date and Close
+    table = pd.DataFrame({
+        "Date": dates,
+        name.split('.')[0]: closes
+    })
+
+    # Save to cache
+    table.to_csv(cache_file, index=False)
+
     return table
 
 
@@ -58,20 +91,21 @@ def request_url(url):
         raise RuntimeError(
             "Incorrect and possibly insecure protocol in url " + url)
 
-    httprequest = Request(url, headers={"Accept": "application/json"})
+    # httprequest = Request(url, headers={
+    #                       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9"})
+    r = requests.get(url, headers={
+        "User-Agent": "Mozilla/5.0",
+    })
 
-    with urlopen(httprequest) as response:
-        if response.status == 200:
-            val = response.read().decode()
-            return json.loads(val)['timeseries']['result'][0]['trailingMarketCap'][0]['reportedValue']['raw']
-        else:
-            raise RuntimeError("Error in request " + url)
+    if r.status_code != 200:
+        raise RuntimeError(
+            "Error in url " + url + " status code " + str(r.status_code))
+    val = r.text
+    return MarketCapExtract(val)
 
 
 def get_capitalization(share, init_time, end_time):
-    url = 'https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/' + share + \
-        '?lang=en-US&region=US&symbol='+share+'&padTimeSeries=true&type=trailingMarketCap&' + \
-        'period1=' + str(init_time)+'&period2='+str(end_time)
+    url = f'https://finance.yahoo.com/quote/{share}?p={share}'
     capitalization = request_url(url)
     return capitalization
 

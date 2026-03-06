@@ -20,11 +20,12 @@ Simulate scenarios and find the best portfolio.
 #Install python dependencies:
 
 ```bash
-pip install -r ./requirements.txt
+poetry install
+
 ```
 
 Run the following command to start
 
 ```bash
-python portafolio.py
+poetry run python main.py
 ```

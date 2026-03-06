@@ -17,29 +17,30 @@ import scipy.optimize
 import random
 from bs4 import BeautifulSoup
 from market_tools import forecast_12months, create_views, create_views_and_link_matrix, MarketCapExtract
-import requests
+import os
 WEEK = False
 MONTH = False
-MONTOUSD = 5900
+MONTOUSD = 10000
 
 # shares = ['QQQ', 'SPY', 'VTI', 'VOO', 'VUG',
 #           ]  # '0700.HK'] 'ZION',
-shares = [
-    'FB', 'PHM', 'WY', 'LPX', 'QFIN', 'TER', 'TROW', 'INTU', 'TSM',  'NVO', 'JNJ', 'DHI', 'ACN',
-    'GOOG', 'AAPL', 'MSFT', 'AMZN',
-    'TREX', 'NVDA', 'AMD', 'V',  'INTC', 'NFLX', 'ADBE', 'MCD', 'PFE',
-]
-_shares = [
-    'DVN', 'MPC', 'USO', 'SU',
+W_LIMITS = (0.00, 1/12)
+shares = [  # XLV == VHT
+          #'QQQ', 'SPY', 'GLD', 'VOO',
+          'XLU', 'QQQ', 'SPY', 'GLD', 'SCHD','VOO', 'AAPL', 'GOOG', 'MSFT', 'TSM', "AMD", "NVDA"
+    # 'XLU', 'CIBR', 'QQQ', 'VOO', 'SPY', 'GLD', 'AAPL', 'GOOG', 'MSFT', 'TSM', "AMD", "NVDA"
+    # 'OIL', 'DVN', 'MPC', 'USO', 'SU', 'XLE',  'XLP',
+    # 'XLF',
+    # 'QQQ', 'VOO', 'VTI', 'VUG', 'VNQ',  'EWT',
+    # 'XLE',  'XLF', 'XLU', 'XLI', 'XLK', 'XLV',
+    # 'XLY', 'XLB', 'XLP', 'XLRE', 'SMH',
 ]
 shares_view = []
-low_up_bound = [-0.005 for _ in shares] + \
-    [1 for _ in shares]  # 2.0/len(shares)
 
-DAYS = 210  # 30*12
-RISK_FREE = -0.8
+DAYS = 360  # day for data analysis
+RISK_FREE_ANUL_PERC = 5
+RISK_FREE = (1 + RISK_FREE_ANUL_PERC/100) ** (1/365) - 1 
 TAU = 0.025
-# https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/MSFT?lang=en-US&region=US&symbol=MSFT&padTimeSeries=true&type=trailingMarketCap&period1=493590046&period2=1637385555
 
 # %% FUNCTIONS
 
@@ -51,6 +52,18 @@ def str_to_datetime(col):
 
 
 def load_table(name, init_time, end_time):
+    # Ensure temp directory exists
+    os.makedirs("temp", exist_ok=True)
+
+    # Define cache filename (name_day)
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    cache_file = f"temp/{name}_{today_str}.csv"
+
+    # If file exists, load from cache
+    if os.path.exists(cache_file):
+        return pd.read_csv(cache_file, parse_dates=["Date"])
+
+    # Otherwise fetch from API
     url = "https://query1.finance.yahoo.com/v8/finance/chart/"+name + \
         "?period1=" + str(init_time)+"&period2="+str(end_time) + \
         "&interval=1d"
@@ -74,6 +87,9 @@ def load_table(name, init_time, end_time):
         name.split('.')[0]: closes
     })
 
+    # Save to cache
+    table.to_csv(cache_file, index=False)
+
     return table
 
 
@@ -85,7 +101,16 @@ def request_url(url):
     # httprequest = Request(url, headers={
     #                       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9"})
     r = requests.get(url, headers={
-        "User-Agent": "Mozilla/5.0",
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+        "accept-language": "es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7",
+        "sec-ch-ua": "\" Not A;Brand\";v=\"99\", \"Chromium\";v=\"96\", \"Google Chrome\";v=\"96\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Linux\"",
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "none",
+        "sec-fetch-user": "?1",
+        "upgrade-insecure-requests": "1"
     })
 
     if r.status_code != 200:
@@ -126,7 +151,7 @@ def get_unix_time():
     return init_time, end_time
 
 
-def bulk_stocks(shares, shares_view):
+def bulk_stocks(shares, shares_view, weights=None):
     init_time, end_time = get_unix_time()
     caps = []
     forecast = []
@@ -140,7 +165,7 @@ def bulk_stocks(shares, shares_view):
         else:
             temp = load_table(share, init_time, end_time)
             data = data.merge(temp, on=['Date'])
-        caps.append(1)
+        # caps.append(get_capitalization(share, init_time, end_time))
 
     for share in tqdm.tqdm([item for sublist in shares_view for item in sublist]):
         change_12m = (forecast_12months(share) -
@@ -148,8 +173,10 @@ def bulk_stocks(shares, shares_view):
         share_view2.append(share)
         forecast.append(change_12m)
     # print(np.diag(caps))
-    # w_caps = np.array([1/len(share) for _ in share])
-    w_caps = np.array(caps)/sum(caps)
+    if not weights:
+        weights = [1 for _ in shares]
+    w_caps = np.array(weights)/sum(weights)
+    #w_caps = np.array(caps)/sum(caps)
     for share1, share2 in shares_view:
         forecast_ii = [forecast[share_view2.index(
             share1)], forecast[share_view2.index(share2)]]
@@ -190,7 +217,7 @@ def solve_weights(R, C, rf):
     n = len(R)
     W = np.ones([n])/n						# start optimization with equal weights
     # weights for boundaries between 0%..100%. No leverage, no shorting
-    b_ = [(0.00, 1.) for i in range(n)]
+    b_ = [W_LIMITS for i in range(n)]
     c_ = ({'type': 'eq', 'fun': lambda W: np.sum(W)-1.}
           )  # Sum of weights must be 100%
     optimized = scipy.optimize.minimize(
@@ -239,10 +266,6 @@ mean_returns = np.array(returns.mean())
 
 cov_returns = np.array(returns.cov())
 
-# para todo el periodo de analisis
-# mean_returns = (1+mean_returns)**RECORDS - 1
-# cov_returns = cov_returns * (RECORDS)
-
 # %%
 print('Días de análisis : ', DAYS)
 print('Cantidad de records analizados: ', RECORDS)
@@ -260,72 +283,5 @@ print("Portafolio return: {:.4%} -> {} USD".format(mean,
       round(MONTOUSD*mean, 2)))
 print("Portafolio standard deviation: {:.4%} -> {} USD".format(
     std, round(MONTOUSD*std, 2)))
-
-
-# %% print_rendimiento(MONTOUSD, DAYS, mean, var, 4000)
-# Black litterman reverse optimization
-print("{} Black-litterman reverse optimization {}".format("#"*10, "#"*10))
-# Calculate portfolio historical return and variance
-mean, var = port_mean_var(w_caps, mean_returns.copy(), cov_returns.copy())
-
-lmb = (mean - RISK_FREE) / var  # Calculate risk aversion
-# Calculate equilibrium excess returns
-Pi = np.dot(np.dot(lmb, cov_returns.copy()), w_caps)
-weights = solve_weights(Pi + RISK_FREE, cov_returns.copy(), RISK_FREE)
-mean, var = port_mean_var(weights, mean_returns.copy(), cov_returns.copy(),)
-std = np.sqrt(var)
-for name, fp in zip(names, weights):
-    print('{} : {:.2f}% -> {} USD'.format(name, fp*100, round(fp*MONTOUSD, 2)))
-
-print("Portafolio return: {:.4%} -> {} USD".format(mean,
-      round(MONTOUSD*mean, 2)))
-print("Portafolio standard deviation: {:.4%} -> {} USD".format(
-    std, round(MONTOUSD*std, 2)))
 print_rendimiento(MONTOUSD, DAYS, mean, std, 4000)
-
 print("#"*50)
-
-# %%
-# OPTIMIZACION
-options["show_progress"] = False
-
-# %%
-n_prices = len(data.columns.tolist())
-g1 = np.diag([-1.0]*n_prices)
-g2 = np.diag([1.0]*n_prices)
-
-n = mean_returns.shape[0]
-P = matrix(cov_returns)
-q = matrix(0.0, (n, 1))
-G = matrix(np.append(g1, g2, 0))
-# h = matrix(0.0, (n, 1))
-h = matrix(np.stack([[float(i)] for i in low_up_bound]))
-A = matrix(1.0, (1, n))
-b = matrix(1.0)
-
-
-# %%
-# Calculamos la solucion
-sol = qp(P, q, G, h, A, b)
-pesos = sol["x"]
-porcent = 100*pesos.T
-# %%
-print("{} Minimal Variance Optimization {}".format("#"*10, "#"*10))
-for name, fp in zip(names, porcent):
-    print('{} : {:.2f}% -> {} USD'.format(name, fp, round(fp*MONTOUSD/100, 2)))
-
-
-# %%
-# Calculamos las estadisticas de la posicion optima
-min_variance = dot(pesos, P*pesos)
-min_std = np.sqrt(min_variance)
-min_std_return = dot(matrix(mean_returns), pesos)
-print("Portafolio return: {:.4%} -> {} USD".format(min_std_return,
-      round(MONTOUSD*min_std_return, 2)))
-print("Portafolio standard deviation: {:.4%} -> {} USD".format(
-    min_std, round(MONTOUSD*min_std, 2)))
-print_rendimiento(MONTOUSD, DAYS, min_std_return, min_std, 4000)
-# %%
-# Foronterda eficiente
-# max_return = np.max(mean_returns)
-# print("Portafolio max return: {:.4%}".format(max_return))

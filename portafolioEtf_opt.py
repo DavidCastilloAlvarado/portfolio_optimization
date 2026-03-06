@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta, timezone
-from simulation import print_rendimiento
+from simulation import print_rendimiento, print_rendimiento_backtest
 from urllib.request import urlopen, Request
 import requests
 import json
@@ -17,27 +17,41 @@ import scipy.optimize
 import random
 from bs4 import BeautifulSoup
 from market_tools import forecast_12months, create_views, create_views_and_link_matrix, MarketCapExtract
-import requests
+import os
 WEEK = False
 MONTH = False
-MONTOUSD = 5900
+MONTOUSD = 2300
+MONTHLY_DELTA = 500  # USD added to the portfolio every month (DCA)
 
 # shares = ['QQQ', 'SPY', 'VTI', 'VOO', 'VUG',
 #           ]  # '0700.HK'] 'ZION',
-shares = [
-    'FB', 'PHM', 'WY', 'LPX', 'QFIN', 'TER', 'TROW', 'INTU', 'TSM',  'NVO', 'JNJ', 'DHI', 'ACN',
-    'GOOG', 'AAPL', 'MSFT', 'AMZN',
-    'TREX', 'NVDA', 'AMD', 'V',  'INTC', 'NFLX', 'ADBE', 'MCD', 'PFE',
-]
-_shares = [
-    'DVN', 'MPC', 'USO', 'SU',
-]
-shares_view = []
-low_up_bound = [-0.005 for _ in shares] + \
-    [1 for _ in shares]  # 2.0/len(shares)
 
-DAYS = 210  # 30*12
-RISK_FREE = -0.8
+shares = [  # XLV == VHT
+    'XLE', 'XLU', 'QQQ', 'SCHD', 'SPY', 'GOOG', 'GLD', 'AAPL','MSFT', 'TSM', "AMD",
+    # 'OIL', 'DVN', 'MPC', 'USO', 'SU', 'XLE',  'XLP',
+    # 'XLF',
+    # 'QQQ', 'VOO', 'VTI', 'VUG', 'VNQ',  'EWT',
+    # 'XLE',  'XLF', 'XLU', 'XLI', 'XLK', 'XLV',
+    # 'XLY', 'XLB', 'XLP', 'XLRE', 'SMH',
+]
+W_LIMITS = (0.00, 1/len(shares)*1.5)
+WEIGHTS_ETF_IMPORTANCE = [
+    1 for _ in shares
+    # 2.0, 1.0, 0.5, 2.0, 1, 4,  5,
+    # 10.0,
+    # 1, 1, 3, 1, 40.0, 10,
+    # 30.0,    1, 1,  1.0,  1.1, 40.0,
+    # 2.0,     1.0, 30.0, 4, 1.1
+]
+shares_wait = ['XLC', 'CIBR', 'UPRO', 'SPXL', 'SKYY', 'ACN', 'AAPL', ]
+shares_view = []
+low_up_bound = [-W_LIMITS[0] for _ in shares] + [W_LIMITS[1] for _ in shares]  # 2.0/len(shares)
+
+DAYS = 720  # day for data analysis
+SIM_DAYS = 252  # day for simulation
+DAYS_HORIZON = 360  # days in the future after investment
+RISK_FREE_ANUL_PERC = 5
+RISK_FREE = (1 + RISK_FREE_ANUL_PERC/100) ** (1/365) - 1 
 TAU = 0.025
 # https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/MSFT?lang=en-US&region=US&symbol=MSFT&padTimeSeries=true&type=trailingMarketCap&period1=493590046&period2=1637385555
 
@@ -51,6 +65,18 @@ def str_to_datetime(col):
 
 
 def load_table(name, init_time, end_time):
+    # Ensure temp directory exists
+    os.makedirs("temp", exist_ok=True)
+
+    # Define cache filename (name_day)
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    cache_file = f"temp/{name}_{today_str}.csv"
+
+    # If file exists, load from cache
+    if os.path.exists(cache_file):
+        return pd.read_csv(cache_file, parse_dates=["Date"])
+
+    # Otherwise fetch from API
     url = "https://query1.finance.yahoo.com/v8/finance/chart/"+name + \
         "?period1=" + str(init_time)+"&period2="+str(end_time) + \
         "&interval=1d"
@@ -74,6 +100,9 @@ def load_table(name, init_time, end_time):
         name.split('.')[0]: closes
     })
 
+    # Save to cache
+    table.to_csv(cache_file, index=False)
+
     return table
 
 
@@ -85,7 +114,16 @@ def request_url(url):
     # httprequest = Request(url, headers={
     #                       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9"})
     r = requests.get(url, headers={
-        "User-Agent": "Mozilla/5.0",
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+        "accept-language": "es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7",
+        "sec-ch-ua": "\" Not A;Brand\";v=\"99\", \"Chromium\";v=\"96\", \"Google Chrome\";v=\"96\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Linux\"",
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "none",
+        "sec-fetch-user": "?1",
+        "upgrade-insecure-requests": "1"
     })
 
     if r.status_code != 200:
@@ -140,7 +178,7 @@ def bulk_stocks(shares, shares_view):
         else:
             temp = load_table(share, init_time, end_time)
             data = data.merge(temp, on=['Date'])
-        caps.append(1)
+        # caps.append(get_capitalization(share, init_time, end_time))
 
     for share in tqdm.tqdm([item for sublist in shares_view for item in sublist]):
         change_12m = (forecast_12months(share) -
@@ -148,8 +186,8 @@ def bulk_stocks(shares, shares_view):
         share_view2.append(share)
         forecast.append(change_12m)
     # print(np.diag(caps))
-    # w_caps = np.array([1/len(share) for _ in share])
-    w_caps = np.array(caps)/sum(caps)
+    w_caps = np.array(WEIGHTS_ETF_IMPORTANCE)/sum(WEIGHTS_ETF_IMPORTANCE)
+    #w_caps = np.array(caps)/sum(caps)
     for share1, share2 in shares_view:
         forecast_ii = [forecast[share_view2.index(
             share1)], forecast[share_view2.index(share2)]]
@@ -190,7 +228,7 @@ def solve_weights(R, C, rf):
     n = len(R)
     W = np.ones([n])/n						# start optimization with equal weights
     # weights for boundaries between 0%..100%. No leverage, no shorting
-    b_ = [(0.00, 1.) for i in range(n)]
+    b_ = [W_LIMITS for i in range(n)]
     c_ = ({'type': 'eq', 'fun': lambda W: np.sum(W)-1.}
           )  # Sum of weights must be 100%
     optimized = scipy.optimize.minimize(
@@ -240,8 +278,12 @@ mean_returns = np.array(returns.mean())
 cov_returns = np.array(returns.cov())
 
 # para todo el periodo de analisis
-# mean_returns = (1+mean_returns)**RECORDS - 1
-# cov_returns = cov_returns * (RECORDS)
+if DAYS_HORIZON:
+    RECORDS_HORIZON = DAYS_HORIZON
+else:
+    RECORDS_HORIZON = RECORDS
+# mean_returns = (1+mean_returns)**RECORDS_HORIZON - 1
+# cov_returns = cov_returns * (RECORDS_HORIZON)
 
 # %%
 print('Días de análisis : ', DAYS)
@@ -260,9 +302,10 @@ print("Portafolio return: {:.4%} -> {} USD".format(mean,
       round(MONTOUSD*mean, 2)))
 print("Portafolio standard deviation: {:.4%} -> {} USD".format(
     std, round(MONTOUSD*std, 2)))
-
-
-# %% print_rendimiento(MONTOUSD, DAYS, mean, var, 4000)
+print_rendimiento(MONTOUSD, SIM_DAYS, mean, std, 4000)
+print_rendimiento_backtest(MONTOUSD, shares, weights, SIM_DAYS, RISK_FREE_ANUL_PERC/100, MONTHLY_DELTA)
+print("#"*50)
+# %%
 # Black litterman reverse optimization
 print("{} Black-litterman reverse optimization {}".format("#"*10, "#"*10))
 # Calculate portfolio historical return and variance
@@ -281,8 +324,8 @@ print("Portafolio return: {:.4%} -> {} USD".format(mean,
       round(MONTOUSD*mean, 2)))
 print("Portafolio standard deviation: {:.4%} -> {} USD".format(
     std, round(MONTOUSD*std, 2)))
-print_rendimiento(MONTOUSD, DAYS, mean, std, 4000)
-
+print_rendimiento(MONTOUSD, SIM_DAYS, mean, std, 4000)
+print_rendimiento_backtest(MONTOUSD, shares, weights, SIM_DAYS, RISK_FREE_ANUL_PERC/100, MONTHLY_DELTA)
 print("#"*50)
 
 # %%
@@ -324,8 +367,11 @@ print("Portafolio return: {:.4%} -> {} USD".format(min_std_return,
       round(MONTOUSD*min_std_return, 2)))
 print("Portafolio standard deviation: {:.4%} -> {} USD".format(
     min_std, round(MONTOUSD*min_std, 2)))
-print_rendimiento(MONTOUSD, DAYS, min_std_return, min_std, 4000)
+print_rendimiento(MONTOUSD, SIM_DAYS, min_std_return, min_std, 4000)
+print_rendimiento_backtest(MONTOUSD, shares, np.array(pesos).flatten(), SIM_DAYS, RISK_FREE_ANUL_PERC/100, MONTHLY_DELTA)
 # %%
 # Foronterda eficiente
-# max_return = np.max(mean_returns)
-# print("Portafolio max return: {:.4%}".format(max_return))
+max_return = np.max(mean_returns)
+print("Portafolio max return: {:.4%}".format(max_return))
+
+# %%
