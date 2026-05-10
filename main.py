@@ -13,14 +13,14 @@ WEEK = False
 MONTH = False
 MIN_VARIANCE = False  # True = Minimal Variance, False = Mean-Variance (Sharpe)
 
-MONTOUSD = 2300
-MONTHLY_DELTA = 500   # USD added monthly (DCA)
+MONTOUSD = 10000
+MONTHLY_DELTA = 300   # USD added monthly (DCA)
 
 SHARES = [
-     'XLU', 'QQQ', 'SCHD',  'GLD',  'JEPQ', 'XLE',
-    'AAPL', 'MSFT', 'AMD','GOOG',
+     'XLU', 'QQQ', 'SCHD',  'GLDM', 'SPY',
+     'AAPL', 'TSM', 'AMD','GOOG',
 ]
-W_LIMITS = (0.00, 0.18)
+W_LIMITS = (0.02, 0.12)  # min and max weight for each stock
 
 DAYS = 720            # calendar days for data analysis
 SIM_DAYS = 252        # trading days for simulation (~1 year)
