@@ -28,7 +28,12 @@ portfolio_optimization/
 ├── simulation.py            # Backtest logic
 ├── web/
 │   ├── __init__.py
-│   └── main.py             # FastAPI web UI
+│   ├── main.py             # FastAPI web UI
+│   ├── renderer.py         # Result rendering helpers
+│   └── static/
+│       ├── index.html      # HTML template
+│       ├── styles.css      # Styles
+│       └── app.js          # Client-side logic
 └── tests/
     ├── __init__.py
     └── test_optimizer.py   # Optimizer + config tests

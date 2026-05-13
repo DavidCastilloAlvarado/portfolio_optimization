@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio Optimizer</title>
+__CSS__
+</head>
+<body>
+<div class="container">
+    <h1>Portfolio Optimizer</h1>
+    <p class="subtitle">Modern Portfolio Theory &mdash; Mean-Variance &amp; Minimal Variance</p>
+
+    <form id="optimizer-form">
+
+        <!-- Data -->
+        <div class="collapse-section open">
+            <div class="collapse-header">
+                <span class="title"><span class="icon">&#x1F4CA;</span> Data</span>
+                <span class="chevron">&#x25B6;</span>
+            </div>
+            <div class="collapse-body">
+                <div class="form-row">
+                    <div class="form-group half">
+                        <label for="resample">Resample Frequency</label>
+                        <select id="resample" name="resample">
+                            <option value="none">Daily</option>
+                            <option value="week">Weekly</option>
+                            <option value="month">Monthly</option>
+                        </select>
+                    </div>
+                    <div class="form-group half">
+                        <label for="days">Historical Days</label>
+                        <input type="number" id="days" name="days" value="720" min="30" max="3650">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Assets -->
+        <div class="collapse-section open">
+            <div class="collapse-header">
+                <span class="title"><span class="icon">&#x1F3E2;</span> Assets</span>
+                <span class="chevron">&#x25B6;</span>
+            </div>
+            <div class="collapse-body">
+                <div class="form-group full">
+                    <label for="shares">Tickers (comma-separated)</label>
+                    <textarea id="shares" name="shares" rows="2">XLU, QQQ, SCHD, GLDM, SPY, AAPL, TSM, AMD, GOOG</textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Optimization -->
+        <div class="collapse-section open">
+            <div class="collapse-header">
+                <span class="title"><span class="icon">&#x2699;</span> Optimization</span>
+                <span class="chevron">&#x25B6;</span>
+            </div>
+            <div class="collapse-body">
+                <div class="form-row">
+                    <div class="form-group half">
+                        <label for="w_limits">Weight Limits (min,max)</label>
+                        <input type="text" id="w_limits" name="w_limits" value="0.02,0.12">
+                    </div>
+                    <div class="form-group half">
+                        <label for="risk_free_annual_perc">Risk-Free Rate (%)</label>
+                        <input type="number" id="risk_free_annual_perc" name="risk_free_annual_perc" value="5" step="0.1" min="0">
+                    </div>
+                </div>
+                <div class="toggle-row">
+                    <input type="checkbox" id="min_variance" name="min_variance" value="on">
+                    <label for="min_variance">Minimal Variance</label>
+                    <span class="hint">Minimizes risk instead of maximizing Sharpe ratio</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Investment -->
+        <div class="collapse-section open">
+            <div class="collapse-header">
+                <span class="title"><span class="icon">&#x1F4B0;</span> Investment</span>
+                <span class="chevron">&#x25B6;</span>
+            </div>
+            <div class="collapse-body">
+                <div class="form-row">
+                    <div class="form-group half">
+                        <label for="monto_usd">Initial Investment (USD)</label>
+                        <input type="number" id="monto_usd" name="monto_usd" value="10000" min="0">
+                    </div>
+                    <div class="form-group half">
+                        <label for="monthly_delta">Monthly Delta / DCA (USD)</label>
+                        <input type="number" id="monthly_delta" name="monthly_delta" value="300" min="0">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Simulation -->
+        <div class="collapse-section open">
+            <div class="collapse-header">
+                <span class="title"><span class="icon">&#x1F50D;</span> Simulation</span>
+                <span class="chevron">&#x25B6;</span>
+            </div>
+            <div class="collapse-body">
+                <div class="form-row">
+                    <div class="form-group half">
+                        <label for="sim_days">Simulation Days</label>
+                        <input type="number" id="sim_days" name="sim_days" value="252" min="1">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="btn-group">
+            <button type="submit" class="btn-run" id="btn-run">&#x27A1; Run Optimization</button>
+            <button type="button" class="btn-secondary" id="btn-reset">&#x21BA; Reset</button>
+        </div>
+    </form>
+
+    <!-- Results -->
+    <div class="results" id="results">
+        <div class="results-title">&#x1F4C8; Optimization Results</div>
+        <div class="result-card" style="margin-bottom:20px;">
+            <div class="label">Strategy</div>
+            <div class="value accent" id="result-strategy"></div>
+        </div>
+
+        <table class="weights-table">
+            <thead>
+                <tr>
+                    <th>Ticker</th>
+                    <th>Allocation</th>
+                    <th class="pct">Weight</th>
+                    <th class="usd">USD</th>
+                </tr>
+            </thead>
+            <tbody id="weights-body"></tbody>
+        </table>
+
+        <div class="results-grid" id="portfolio-stats"></div>
+
+        <!-- Backtest -->
+        <div id="backtest-section" style="display:none; margin-top:32px; padding-top:24px; border-top:1px solid #3c3c3c;">
+            <div style="font-size:16px; font-weight:400; color:#dcdcaa; margin-bottom:16px;">&#x1F4CA; Backtest Results</div>
+            <div class="results-grid" id="backtest-stats"></div>
+        </div>
+
+        <div class="btn-group">
+            <button class="btn-secondary" id="toggle-json">&#x1F4E6; Show JSON</button>
+            <button class="btn-secondary" id="copy-btn" style="display:none;">&#x1F4CB; Copy</button>
+        </div>
+        <pre class="json-block" id="json-block"></pre>
+    </div>
+
+    <div class="error-msg" id="error-msg"></div>
+</div>
+
+<!-- Spinner -->
+<div class="spinner-overlay" id="spinner">
+    <div class="spinner-wrapper">
+        <div class="spinner"></div>
+        <div class="spinner-text" id="spinner-text">Loading...</div>
+    </div>
+</div>
+<script>
+__JS__
+</script>
+</body>
+</html>
