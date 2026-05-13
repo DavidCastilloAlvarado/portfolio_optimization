@@ -1,14 +1,38 @@
 # Portfolio Optimization Engine
 
-A Python tool that finds the optimal asset allocation for your investment portfolio using modern portfolio theory — balancing **risk** and **return** through simulation and optimization.
+A Python tool that finds the optimal asset allocation for your investment portfolio using modern portfolio theory — balancing **risk** and **return** through optimization and backtesting.
 
-## What it does
+## Features
 
-1. **Fetches historical price data** from Yahoo Finance for any set of stock tickers or ETFs
-2. **Optimizes weights** using either Mean-Variance (max Sharpe ratio) or Minimal Variance strategies
-3. **Simulates outcomes** via Monte Carlo and backtests against real historical data
+- **Mean-Variance (Sharpe)** — maximizes risk-adjusted return
+- **Minimal Variance** — minimizes portfolio risk
+- **Historical backtest** — lump-sum and DCA strategies
+- **Web UI** — configure everything via browser, no CLI needed
+- **Yahoo Finance data** — automatic fetch with CSV caching
 
----
+## Project Structure
+
+```
+portfolio_optimization/
+├── main.py                 # CLI entry point
+├── pyproject.toml          # Dependencies + poe tasks
+├── README.md
+├── config/
+│   ├── __init__.py
+│   └── defaults.py         # All parameters as a dataclass
+├── models/
+│   ├── __init__.py
+│   └── blitterman.py       # Black-Litterman + market cap utilities
+├── data_loader.py           # Yahoo Finance fetch + CSV cache
+├── optimizer.py             # Mean-Variance + Min-Variance solvers
+├── simulation.py            # Backtest logic
+├── web/
+│   ├── __init__.py
+│   └── main.py             # FastAPI web UI
+└── tests/
+    ├── __init__.py
+    └── test_optimizer.py   # Optimizer + config tests
+```
 
 ## Quickstart
 
@@ -18,114 +42,87 @@ A Python tool that finds the optimal asset allocation for your investment portfo
 poetry install
 ```
 
-The project requires Python 3.10+ and the following libraries:
-
-| Library | Purpose | Reference |
-|---------|---------|-----------|
-| [pandas](https://pandas.pydata.org/) | Data manipulation and time-series handling | https://pandas.pydata.org/ |
-| [numpy](https://numpy.org/) | Numerical computing (matrix ops, statistics) | https://numpy.org/ |
-| [scipy.optimize](https://docs.scipy.org/doc/scipy/reference/optimize.html) | SLSQP solver for Mean-Variance optimization | https://docs.scipy.org/doc/scipy/ |
-| [cvxopt](https://cvxopt.org/) | Quadratic programming for Minimal Variance | https://cvxopt.org/ |
-| [requests](https://requests.readthedocs.io/) | HTTP client to fetch data from Yahoo Finance API | https://requests.readthedocs.io/ |
-| [tqdm](https://tqdm.github.io/) | Progress bars for bulk downloads | https://tqdm.github.io/ |
-
-### Run the script
+### Run the web UI (recommended)
 
 ```bash
-poetry run python main.py
+poetry run poe web
 ```
 
----
+Open [http://localhost:8000](http://localhost:8000) in your browser.
 
-## How `main.py` works
+### Run CLI
 
-The script is organized into four logical sections:
+```bash
+poetry run poe opt
+```
 
-### 1. Configuration (lines 9–28)
+### Run tests
 
-Defines all tunable parameters at the top of the file so you can customize without touching the logic below:
+```bash
+poetry run poe test
+```
 
-| Variable | Description |
-|----------|-------------|
-| `WEEK` / `MONTH` | Resample frequency (`None`, `"week"`, or `"month"`). `None` = daily. |
-| `MIN_VARIANCE` | `True` = Minimal Variance strategy; `False` = Mean-Variance (max Sharpe) |
-| `MONTOUSD` | Initial investment amount in USD |
-| `MONTHLY_DELTA` | Monthly dollar-amount to add each period (DCA contribution) |
-| `SHARES` | List of ticker symbols (stocks or ETFs) to include in the portfolio |
-| `W_LIMITS` | Min and max weight constraint per asset (default: 2%–12%) |
-| `DAYS` | Calendar days of historical data to analyze for computing returns/covariance |
-| `SIM_DAYS` | Trading days to simulate (~252 = ~1 year) |
-| `RISK_FREE_ANUL_PERC` | Annual risk-free rate in percent (default: 5%) |
+## Configuration
 
-### 2. Data Loading (lines 33–43)
+All parameters are defined in `config/defaults.py`. The default configuration:
 
-Uses functions from `data_loader.py`:
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `resample` | `"none"` | Data frequency: `"none"`, `"week"`, `"month"` |
+| `days` | `720` | Calendar days of historical data |
+| `shares` | `['XLU', 'QQQ', ...]` | Ticker symbols |
+| `w_limits` | `(0.02, 0.12)` | Min/max weight per asset |
+| `min_variance` | `False` | `True` = Min-Variance, `False` = Max Sharpe |
+| `monto_usd` | `10000` | Initial investment (USD) |
+| `monthly_delta` | `300` | Monthly DCA contribution (USD) |
+| `sim_days` | `252` | Trading days for simulation |
+| `risk_free_annual_perc` | `5` | Annual risk-free rate (%) |
 
-- **`bulk_stocks(SHARES, DAYS)`** — Fetches daily close prices for all tickers via the [Yahoo Finance Query v8 API](https://github.com/LearnCash/finance-yahoo). Results are cached locally under `temp/` to avoid repeated network calls.
-- **`prepare_returns(raw_data, resample)`** — Sorts data by date, interpolates missing values using time-weighted interpolation, and computes percentage returns (daily, weekly, or monthly depending on your config).
+## How It Works
 
-From the processed data, the script derives:
-- `mean_returns` — expected daily return per asset
-- `cov_returns` — covariance matrix of daily returns across assets
+### 1. Data Loading
 
-### 3. Optimization (lines 47–61)
+Fetches daily close prices from Yahoo Finance via the [Query v8 API](https://github.com/LearnCash/finance-yahoo). Results are cached locally under `temp/` to avoid repeated network calls.
 
-Calls `optimize()` from `optimizer.py`, which supports two strategies:
+Computes percentage returns (daily, weekly, or monthly) with time-weighted interpolation for missing values.
 
-- **Mean-Variance (Sharpe)** — Uses `scipy.optimize.minimize` with the SLSQP method to maximize the Sharpe ratio by minimizing its inverse. Based on [Harry Markowitz's Modern Portfolio Theory](https://en.wikipedia.org/wiki/Modern_portfolio_theory), first published in 1952.
-- **Minimal Variance** — Uses `cvxopt.qp` (quadratic programming) to find the portfolio with the lowest possible variance subject to weight constraints.
+### 2. Optimization
 
-The Sharpe ratio, defined as `(portfolio_return - risk_free_rate) / portfolio_std`, was introduced by [William F. Sharpe](https://en.wikipedia.org/wiki/William_F._Sharpe) in 1966 and remains one of the most widely used risk-adjusted performance measures.
+Two strategies from `optimizer.py`:
 
-Output includes:
-- Each asset's optimal weight percentage and allocated USD amount
-- Portfolio expected return (mean) and volatility (standard deviation)
+- **Mean-Variance (Sharpe)** — Uses `scipy.optimize.minimize` (SLSQP) to maximize the Sharpe ratio by minimizing its inverse. Based on [Harry Markowitz's Modern Portfolio Theory](https://en.wikipedia.org/wiki/Modern_portfolio_theory) (1952).
 
-### 4. Simulations (lines 66–72)
+- **Minimal Variance** — Uses `cvxopt.qp` (quadratic programming) to find the lowest possible variance portfolio subject to weight constraints.
 
-Runs two simulation modes via `simulation.py`:
+The Sharpe ratio, `(portfolio_return - risk_free_rate) / portfolio_std`, was introduced by [William F. Sharpe](https://en.wikipedia.org/wiki/Sharpe_ratio) (1966).
 
-#### Monte Carlo Simulation (`print_rendimiento`)
-Generates thousands of random future scenarios using a normal distribution parameterized by the portfolio's mean return and standard deviation. Outputs descriptive statistics of simulated returns across all runs.
+### 3. Backtest
 
-Based on the [Monte Carlo method](https://en.wikipedia.org/wiki/Monte_Carlo_method), widely used in quantitative finance for stochastic modeling. See also: [Hull, John C. — Options, Futures, and Other Derivatives](https://www.prenticehall.com/business/engineering/Options_Futures_and_Other_Derivatives/product/fullpage/0136089014).
+Simulates portfolio performance using real historical price data under two approaches:
 
-#### Historical Backtest (`print_rendimiento_backtest`)
-Uses real cached price data to simulate portfolio performance under two investment approaches:
+- **Lump-sum** — Full initial investment upfront
+- **DCA** — Initial investment + monthly contributions every ~21 trading days
 
-- **Lump-sum** — Invests the full `MONTOUSD` upfront
-- **DCA (Dollar Cost Averaging)** — Adds `MONTHLY_DELTA` every ~21 trading days
+Reports: final value, total return %, max drawdown, annualized Sharpe ratio.
 
-Reports per mode:
-- Final portfolio value and total return percentage
-- Maximum drawdown
-- Annualized Sharpe ratio
+## Dependencies
 
----
+| Library | Purpose |
+|---------|---------|
+| [pandas](https://pandas.pydata.org/) | Data manipulation and time-series |
+| [numpy](https://numpy.org/) | Numerical computing |
+| [scipy](https://scipy.org/) | SLSQP optimization |
+| [cvxopt](https://cvxopt.org/) | Quadratic programming |
+| [requests](https://requests.readthedocs.io/) | HTTP client for Yahoo Finance |
+| [tqdm](https://tqdm.github.io/) | Progress bars |
+| [fastapi](https://fastapi.tiangolo.com/) | Web API framework |
+| [uvicorn](https://www.uvicorn.org/) | ASGI server |
 
-## Key Concepts & References
+## Key Concepts
 
 | Concept | Reference |
 |---------|-----------|
-| Modern Portfolio Theory (Markowitz, 1952) | [Wikipedia](https://en.wikipedia.org/wiki/Modern_portfolio_theory) · [Original Paper](https://www.aeaweb.org/articles?id=10.1257/aer.40.3.77) |
-| Sharpe Ratio (Sharpe, 1966) | [Wikipedia](https://en.wikipedia.org/wiki/Sharpe_ratio) · [Original Paper](https://www.ms.jhu.edu/~newham/math171/sharpe.pdf) |
+| Modern Portfolio Theory (Markowitz, 1952) | [Wikipedia](https://en.wikipedia.org/wiki/Modern_portfolio_theory) · [Paper](https://www.aeaweb.org/articles?id=10.1257/aer.40.3.77) |
+| Sharpe Ratio (Sharpe, 1966) | [Wikipedia](https://en.wikipedia.org/wiki/Sharpe_ratio) |
 | Minimal Variance Portfolio | [Wikipedia](https://en.wikipedia.org/wiki/Modern_portfolio_theory#Minimum_variance_portfolio) |
-| Monte Carlo Simulation in Finance | [Wikipedia](https://en.wikipedia.org/wiki/Monte_Carlo_method_in_finance) |
-| Dollar-Cost Averaging | [Wikipedia](https://en.wikipedia.org/wiki/Dollar-cost_averaging) · [Investopedia](https://www.investopedia.com/terms/d/dollarcostaveraging.asp) |
-| Yahoo Finance API v8 | [GitHub Mirror](https://github.com/LearnCash/finance-yahoo) |
-
----
-
-## Customizing Your Portfolio
-
-Edit the `SHARES` list in `main.py` to include any tickers supported by Yahoo Finance. Examples:
-
-```python
-# US equities and ETFs
-SHARES = ['SPY', 'QQQ', 'VTI', 'BND']
-
-# International exposure
-SHARES = ['VEA', 'VWO', 'EWJ', 'EEM']
-```
-
-Adjust `W_LIMITS` to control concentration risk, and set `MIN_VARIANCE = True` if you prefer a conservative low-volatility allocation over maximizing the Sharpe ratio.
+| Dollar-Cost Averaging | [Investopedia](https://www.investopedia.com/terms/d/dollarcostaveraging.asp) |

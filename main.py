@@ -1,72 +1,44 @@
 """Portfolio optimization pipeline — main entry point."""
 
-# %%
 import numpy as np
+from config.defaults import Config
 from data_loader import bulk_stocks, prepare_returns
 from optimizer import optimize
-from simulation import print_rendimiento, print_rendimiento_backtest
+from simulation import run_backtest
 
-# ══════════════════════════════════════════════════════════════
-#  CONFIGURATION
-# ══════════════════════════════════════════════════════════════
-WEEK = False
-MONTH = False
-MIN_VARIANCE = False  # True = Minimal Variance, False = Mean-Variance (Sharpe)
+# ── Default configuration ─────────────────────────────────────────────
+cfg = Config()
 
-MONTOUSD = 10000
-MONTHLY_DELTA = 300   # USD added monthly (DCA)
-
-SHARES = [
-     'XLU', 'QQQ', 'SCHD',  'GLDM', 'SPY',
-     'AAPL', 'TSM', 'AMD','GOOG',
-]
-W_LIMITS = (0.02, 0.12)  # min and max weight for each stock
-
-DAYS = 720            # calendar days for data analysis
-SIM_DAYS = 252        # trading days for simulation (~1 year)
-RISK_FREE_ANUL_PERC = 5
-RISK_FREE = (1 + RISK_FREE_ANUL_PERC / 100) ** (1 / 365) - 1
-
-# ══════════════════════════════════════════════════════════════
-#  DATA LOADING
-# ══════════════════════════════════════════════════════════════
-# %%
-resample = "week" if WEEK else ("month" if MONTH else None)
-raw_data = bulk_stocks(SHARES, DAYS)
+# ── Data loading ──────────────────────────────────────────────────────
+resample = cfg.get_resample()
+raw_data = bulk_stocks(cfg.shares, cfg.days)
 data, returns = prepare_returns(raw_data, resample=resample)
 
 names = data.columns.tolist()
-RECORDS = len(data)
+records = len(data)
 
 mean_returns = np.array(returns.mean())
 cov_returns = np.array(returns.cov())
 
-# ══════════════════════════════════════════════════════════════
-#  OPTIMIZATION
-# ══════════════════════════════════════════════════════════════
-# %%
-print(f"Días de análisis : {DAYS}")
-print(f"Cantidad de records analizados: {RECORDS}")
-print(f"Monto total de inversión: {MONTOUSD} usd")
+# ── Optimization ──────────────────────────────────────────────────────
+print(f"Días de análisis : {cfg.days}")
+print(f"Cantidad de records analizados: {records}")
+print(f"Monto total de inversión: {cfg.monto_usd} usd")
 
 weights, mean, std, strategy = optimize(
-    mean_returns.copy(), cov_returns.copy(), RISK_FREE, W_LIMITS, MIN_VARIANCE,
+    mean_returns.copy(), cov_returns.copy(), cfg.risk_free, cfg.w_limits, cfg.min_variance,
 )
 
-print(f"\n{'#'*10} {strategy} {'#'*10}")
+print(f"\n{'#' * 10} {strategy} {'#' * 10}")
 for name, fp in zip(names, weights):
-    print(f"{name} : {fp*100:.2f}% -> {round(fp*MONTOUSD, 2)} USD")
+    print(f"{name} : {fp * 100:.2f}% -> {round(fp * cfg.monto_usd, 2)} USD")
 
-print(f"Portafolio return: {mean:.4%} -> {round(MONTOUSD*mean, 2)} USD")
-print(f"Portafolio standard deviation: {std:.4%} -> {round(MONTOUSD*std, 2)} USD")
+print(f"Portafolio return: {mean:.4%} -> {round(cfg.monto_usd * mean, 2)} USD")
+print(f"Portafolio standard deviation: {std:.4%} -> {round(cfg.monto_usd * std, 2)} USD")
 
-# ══════════════════════════════════════════════════════════════
-#  SIMULATIONS
-# ══════════════════════════════════════════════════════════════
-# %%
-print_rendimiento(MONTOUSD, SIM_DAYS, mean, std, 4000)
-print_rendimiento_backtest(
-    MONTOUSD, SHARES, weights, SIM_DAYS, RISK_FREE_ANUL_PERC / 100, MONTHLY_DELTA,
+# ── Backtest ──────────────────────────────────────────────────────────
+backtest = run_backtest(
+    cfg.monto_usd, cfg.shares, weights, cfg.sim_days,
+    cfg.risk_free_annual_perc / 100, cfg.monthly_delta,
 )
-print("#" * 50)
-# %%
+print(backtest)

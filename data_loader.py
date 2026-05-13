@@ -7,23 +7,23 @@ import tqdm
 from datetime import datetime, timedelta, timezone
 
 
-def str_to_datetime(col):
+def str_to_datetime(col: pd.Series) -> pd.Series:
     """Convert a string column to datetime objects."""
     return col.apply(lambda x: datetime.strptime(x, "%Y-%m-%d"))
 
 
-def get_unix_time(days_back):
+def get_unix_time(days_back: int) -> tuple:
     """Return (init_time, end_time) as unix timestamps, looking back `days_back` calendar days."""
     init_time = datetime.now() - timedelta(days=days_back)
     end_time = datetime.now()
 
-    def unix(dt):
+    def unix(dt: datetime) -> int:
         return int(dt.replace(tzinfo=timezone.utc).timestamp())
 
     return unix(init_time), unix(end_time)
 
 
-def load_table(name, init_time, end_time):
+def load_table(name: str, init_time: int, end_time: int) -> pd.DataFrame:
     """Load daily close prices for a single ticker, with CSV caching in temp/."""
     os.makedirs("temp", exist_ok=True)
 
@@ -55,7 +55,7 @@ def load_table(name, init_time, end_time):
     return table
 
 
-def bulk_stocks(shares, days_back):
+def bulk_stocks(shares: list, days_back: int) -> pd.DataFrame:
     """Load and merge daily prices for all tickers into a single DataFrame."""
     init_time, end_time = get_unix_time(days_back)
     data = None
@@ -69,7 +69,7 @@ def bulk_stocks(shares, days_back):
     return data
 
 
-def prepare_returns(data, resample=None):
+def prepare_returns(data: pd.DataFrame, resample: str | None = None) -> tuple:
     """Sort data by date, interpolate gaps, and compute daily returns.
 
     Args:

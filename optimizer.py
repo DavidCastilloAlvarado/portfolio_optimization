@@ -6,22 +6,27 @@ from cvxopt.solvers import qp, options as cvxopt_options
 from cvxopt import matrix
 
 
-def port_mean(W, R):
+def port_mean(W: np.ndarray, R: np.ndarray) -> float:
     """Calculate portfolio mean return."""
-    return np.sum(R * W)
+    return float(np.sum(R * W))
 
 
-def port_var(W, C):
+def port_var(W: np.ndarray, C: np.ndarray) -> float:
     """Calculate portfolio variance of returns."""
-    return np.dot(np.dot(W, C), W)
+    return float(np.dot(np.dot(W, C), W))
 
 
-def port_mean_var(W, R, C):
+def port_mean_var(W: np.ndarray, R: np.ndarray, C: np.ndarray) -> tuple:
     """Calculate portfolio mean return and variance."""
     return port_mean(W, R), port_var(W, C)
 
 
-def solve_mean_variance(mean_returns, cov_returns, rf, w_limits):
+def solve_mean_variance(
+    mean_returns: np.ndarray,
+    cov_returns: np.ndarray,
+    rf: float,
+    w_limits: tuple,
+) -> np.ndarray:
     """Mean-Variance optimization: maximize Sharpe ratio.
 
     Args:
@@ -33,10 +38,10 @@ def solve_mean_variance(mean_returns, cov_returns, rf, w_limits):
     Returns:
         weights: Optimized portfolio weights.
     """
-    def fitness(W, R, C, rf):
+    def fitness(W: np.ndarray, R: np.ndarray, C: np.ndarray, rf_val: float) -> float:
         mean, var = port_mean_var(W, R, C)
-        sharpe = (mean - rf) / np.sqrt(var)
-        return 1 / sharpe  # minimize inverse Sharpe
+        sharpe = (mean - rf_val) / np.sqrt(var)
+        return 1.0 / sharpe  # minimize inverse Sharpe
 
     n = len(mean_returns)
     W0 = np.ones(n) / n
@@ -52,7 +57,11 @@ def solve_mean_variance(mean_returns, cov_returns, rf, w_limits):
     return result.x
 
 
-def solve_min_variance(cov_returns, w_limits, n_assets):
+def solve_min_variance(
+    cov_returns: np.ndarray,
+    w_limits: tuple,
+    n_assets: int,
+) -> np.ndarray:
     """Minimal Variance optimization via quadratic programming.
 
     Args:
@@ -81,7 +90,13 @@ def solve_min_variance(cov_returns, w_limits, n_assets):
     return np.array(sol["x"]).flatten()
 
 
-def optimize(mean_returns, cov_returns, rf, w_limits, min_variance=False):
+def optimize(
+    mean_returns: np.ndarray,
+    cov_returns: np.ndarray,
+    rf: float,
+    w_limits: tuple,
+    min_variance: bool = False,
+) -> tuple:
     """Run the selected optimization strategy.
 
     Args:
