@@ -2,6 +2,10 @@
 
 A Python tool that finds the optimal asset allocation for your investment portfolio using modern portfolio theory — balancing **risk** and **return** through optimization and backtesting.
 
+## WebUI
+
+![alt text](<img.png>)
+
 ## Features
 
 - **Mean-Variance (Sharpe)** — maximizes risk-adjusted return
@@ -131,3 +135,4 @@ Reports: final value, total return %, max drawdown, annualized Sharpe ratio.
 | Sharpe Ratio (Sharpe, 1966) | [Wikipedia](https://en.wikipedia.org/wiki/Sharpe_ratio) |
 | Minimal Variance Portfolio | [Wikipedia](https://en.wikipedia.org/wiki/Modern_portfolio_theory#Minimum_variance_portfolio) |
 | Dollar-Cost Averaging | [Investopedia](https://www.investopedia.com/terms/d/dollarcostaveraging.asp) |
+
