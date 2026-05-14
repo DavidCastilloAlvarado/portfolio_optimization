@@ -40,7 +40,9 @@ def build_optimization_result(
 
 
 def build_backtest_result(backtest: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Filter backtest results, returning None on error."""
-    if backtest and "error" not in backtest:
-        return backtest
-    return None
+    """Filter backtest results, surfacing error messages."""
+    if backtest is None:
+        return None
+    if "error" in backtest:
+        return {"error": backtest["error"]}
+    return backtest

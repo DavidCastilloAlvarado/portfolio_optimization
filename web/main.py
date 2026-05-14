@@ -1,7 +1,9 @@
 """FastAPI web UI for portfolio optimization."""
 
+import traceback
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse
+from fastapi.responses import JSONResponse
 import numpy as np
 
 from config.defaults import Config
@@ -39,48 +41,56 @@ async def optimize_endpoint(
     risk_free_annual_perc: str = Form("5"),
 ):
     """Run the optimization pipeline with form parameters."""
-    data = {
-        "resample": resample,
-        "days": days,
-        "shares": shares,
-        "w_limits": w_limits,
-        "min_variance": min_variance,
-        "monto_usd": monto_usd,
-        "monthly_delta": monthly_delta,
-        "sim_days": sim_days,
-        "risk_free_annual_perc": risk_free_annual_perc,
-    }
+    try:
+        data = {
+            "resample": resample,
+            "days": days,
+            "shares": shares,
+            "w_limits": w_limits,
+            "min_variance": min_variance,
+            "monto_usd": monto_usd,
+            "monthly_delta": monthly_delta,
+            "sim_days": sim_days,
+            "risk_free_annual_perc": risk_free_annual_perc,
+        }
 
-    cfg = Config.from_dict(data)
+        cfg = Config.from_dict(data)
 
-    # Data loading
-    resample_val = cfg.get_resample()
-    raw_data = bulk_stocks(cfg.shares, cfg.days)
-    data_df, returns = prepare_returns(raw_data, resample=resample_val)
+        # Data loading
+        resample_val = cfg.get_resample()
+        raw_data = bulk_stocks(cfg.shares, cfg.days)
+        data_df, returns = prepare_returns(raw_data, resample=resample_val)
 
-    names = data_df.columns.tolist()
-    mean_returns = np.array(returns.mean())
-    cov_returns = np.array(returns.cov())
+        names = data_df.columns.tolist()
+        mean_returns = np.array(returns.mean())
+        cov_returns = np.array(returns.cov())
 
-    # Optimization
-    weights, port_mean_val, port_std, strategy = optimize(
-        mean_returns.copy(), cov_returns.copy(), cfg.risk_free, cfg.w_limits, cfg.min_variance,
-    )
-
-    # Build result
-    result = build_optimization_result(
-        weights, port_mean_val, port_std, strategy,
-        names, cfg.monto_usd, cfg.risk_free,
-    )
-
-    # Backtest
-    backtest = build_backtest_result(
-        run_backtest(
-            cfg.monto_usd, cfg.shares, weights, cfg.sim_days,
-            cfg.risk_free_annual_perc / 100, cfg.monthly_delta,
+        # Optimization
+        weights, port_mean_val, port_std, strategy = optimize(
+            mean_returns.copy(), cov_returns.copy(), cfg.risk_free, cfg.w_limits, cfg.min_variance,
         )
-    )
-    if backtest:
-        result["backtest"] = backtest
 
-    return result
+        # Build result
+        result = build_optimization_result(
+            weights, port_mean_val, port_std, strategy,
+            names, cfg.monto_usd, cfg.risk_free,
+        )
+
+        # Backtest
+        backtest = build_backtest_result(
+            run_backtest(
+                cfg.monto_usd, cfg.shares, weights, cfg.sim_days,
+                cfg.risk_free_annual_perc / 100, cfg.monthly_delta,
+            )
+        )
+        if backtest:
+            result["backtest"] = backtest
+
+        return result
+
+    except Exception as e:
+        tb = traceback.format_exc()
+        return JSONResponse(
+            status_code=400,
+            content={"error": str(e), "traceback": tb},
+        )

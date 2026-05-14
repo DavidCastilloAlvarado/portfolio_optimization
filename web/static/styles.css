@@ -391,12 +391,32 @@ input[type="number"]::-webkit-outer-spin-button {
     color: #f44747;
     padding: 14px 18px;
     border-radius: 4px;
-    font-size: 13px;
     margin-top: 20px;
     display: none;
 }
 .error-msg.visible {
     display: block;
+}
+.error-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.error-detail {
+    font-size: 12px;
+    white-space: pre-wrap;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    line-height: 1.5;
+    max-height: 400px;
+    overflow-y: auto;
+    word-break: break-word;
+}
+.bt-error {
+    color: #f44747;
+    padding: 12px;
+    background-color: #3c1e1e;
+    border-radius: 4px;
+    font-size: 13px;
 }
 
 /* ── Backtest sections ───────────────────────────────────────────── */

@@ -42,24 +42,33 @@ form.addEventListener('submit', async (e) => {
     if (!mv) fd.delete('min_variance');
 
     try {
-        spinnerText.textContent = 'Optimizing portfolio...';
+        spinnerText.textContent = 'Fetching market data...';
         const res = await fetch('/optimize', {
             method: 'POST',
             body: fd,
         });
 
         if (!res.ok) {
-            const err = await res.text();
-            throw new Error(err);
+            try {
+                const errData = await res.json();
+                renderError(errData.traceback || errData.error || 'Unknown server error');
+            } catch {
+                const err = await res.text();
+                renderError(err || 'Unknown server error');
+            }
+            return;
         }
 
         const data = await res.json();
+        if (data.error) {
+            renderError(data.error);
+            return;
+        }
         renderResults(data);
         resultsDiv.classList.add('visible');
         resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) {
-        errorMsg.textContent = 'Error: ' + (err.message || 'Unknown error');
-        errorMsg.classList.add('visible');
+        renderError(err.message || 'Unknown error');
     } finally {
         btnRun.disabled = false;
         btnRun.innerHTML = '&#x27A1; Run Optimization';
@@ -115,8 +124,12 @@ function renderResults(data) {
     btStatsDiv.innerHTML = '';
 
     if (data.backtest) {
-        btSection.style.display = 'block';
-        const lump = data.backtest.lump_sum;
+        if (data.backtest.error) {
+            btSection.style.display = 'block';
+            btStatsDiv.innerHTML = '<div class="bt-error">Backtest failed: ' + escapeHtml(data.backtest.error) + '</div>';
+        } else {
+            btSection.style.display = 'block';
+            const lump = data.backtest.lump_sum;
         if (lump) {
             const lumpSection = document.createElement('div');
             lumpSection.className = 'bt-section';
@@ -170,6 +183,7 @@ function renderResults(data) {
             dcaSection.appendChild(dcaCards);
             btStatsDiv.appendChild(dcaSection);
         }
+        }
     } else {
         btSection.style.display = 'none';
     }
@@ -203,3 +217,16 @@ copyBtn.addEventListener('click', () => {
         setTimeout(() => { copyBtn.innerHTML = '&#x1F4CB; Copy'; }, 1500);
     });
 });
+
+// ── Render error ───────────────────────────────────────────────────
+function renderError(message) {
+    errorMsg.innerHTML = '<div class="error-title">&#x26A0; Error</div><div class="error-detail">' + escapeHtml(message) + '</div>';
+    errorMsg.classList.add('visible');
+    errorMsg.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}

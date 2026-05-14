@@ -42,10 +42,16 @@ def load_table(name: str, init_time: int, end_time: int) -> pd.DataFrame:
     response.raise_for_status()
     data = response.json()
 
-    result = data["chart"]["result"][0]
-    timestamps = result["timestamp"]
-    closes = result["indicators"]["quote"][0]["close"]
-    dates = [datetime.fromtimestamp(ts, tz=timezone.utc) for ts in timestamps]
+    result = data["chart"]["result"]
+    if not result or result[0] is None:
+        error_msg = data["chart"].get("error", "Unknown error from Yahoo Finance")
+        raise ValueError(f"Failed to fetch data for ticker '{name}': {error_msg}")
+    result = result[0]
+    timestamps = result.get("timestamp", [])
+    closes = result.get("indicators", {}).get("quote", [{}])[0].get("close", [])
+    if not timestamps:
+        raise ValueError(f"No price data returned for ticker '{name}' — ticker may be invalid or delisted.")
+    dates = [datetime.fromtimestamp(ts, tz=timezone.utc) for ts in timestamps if ts is not None]
 
     table = pd.DataFrame({
         "Date": dates,
