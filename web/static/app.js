@@ -9,6 +9,19 @@ const jsonBlock = document.getElementById('json-block');
 const copyBtn = document.getElementById('copy-btn');
 let lastJson = '';
 
+// ── Theme ────────────────────────────────────────────────────────────
+const themeToggle = document.getElementById('theme-toggle');
+function applyTheme(name) {
+    document.documentElement.setAttribute('data-theme', name);
+    themeToggle.innerHTML = name === 'dark' ? '&#x1F319; Dark' : '&#x2600;&#xFE0E; Light';
+}
+applyTheme(document.documentElement.getAttribute('data-theme') || 'dark');
+themeToggle.addEventListener('click', () => {
+    const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    try { localStorage.setItem('po-theme', next); } catch (e) {}
+});
+
 // ── Reset form ─────────────────────────────────────────────────────
 document.getElementById('btn-reset').addEventListener('click', () => {
     form.reset();

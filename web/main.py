@@ -4,12 +4,9 @@ import traceback
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse
 from fastapi.responses import JSONResponse
-import numpy as np
 
 from config.defaults import Config
-from data_loader import bulk_stocks, prepare_returns
-from optimizer import optimize
-from simulation import run_backtest
+from core.pipeline import run_pipeline
 from web.renderer import build_optimization_result, build_backtest_result
 
 app = FastAPI(title="Portfolio Optimizer", version="1.0.0")
@@ -57,49 +54,18 @@ async def optimize_endpoint(
         }
 
         cfg = Config.from_dict(data)
+        result = run_pipeline(cfg)
 
-        # Data loading
-        resample_val = cfg.get_resample()
-        raw_data = bulk_stocks(cfg.shares, cfg.days)
-        data_df, returns = prepare_returns(raw_data, resample=resample_val)
-
-        names = data_df.columns.tolist()
-        mean_returns = np.array(returns.mean())
-        cov_returns = np.array(returns.cov())
-
-        gmin, gmax = cfg.w_limits
-        per = {t.upper(): b for t, b in cfg.w_limits_per_ticker.items()}
-        asset_bounds = []
-        for t in names:
-            p = per.get(t.upper())
-            if p is None:
-                asset_bounds.append((gmin, gmax))
-            else:
-                lo, hi = p
-                asset_bounds.append((lo if lo is not None else gmin, hi if hi is not None else gmax))
-
-        # Optimization
-        weights, port_mean_val, port_std, strategy = optimize(
-            mean_returns.copy(), cov_returns.copy(), cfg.risk_free, asset_bounds, cfg.min_variance,
+        optimization = build_optimization_result(
+            result["weights"], result["mean"], result["std"], result["strategy"],
+            result["names"], cfg.monto_usd, cfg.risk_free,
         )
 
-        # Build result
-        result = build_optimization_result(
-            weights, port_mean_val, port_std, strategy,
-            names, cfg.monto_usd, cfg.risk_free,
-        )
-
-        # Backtest
-        backtest = build_backtest_result(
-            run_backtest(
-                cfg.monto_usd, cfg.shares, weights, cfg.sim_days,
-                cfg.risk_free_annual_perc / 100, cfg.monthly_delta,
-            )
-        )
+        backtest = build_backtest_result(result.get("backtest"))
         if backtest:
-            result["backtest"] = backtest
+            optimization["backtest"] = backtest
 
-        return result
+        return optimization
 
     except Exception as e:
         tb = traceback.format_exc()

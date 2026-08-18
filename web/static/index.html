@@ -4,12 +4,34 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Portfolio Optimizer</title>
+<script>
+(function () {
+    var theme = 'dark';
+    try { theme = localStorage.getItem('po-theme') || 'dark'; } catch (e) {}
+    var m = location.hash.match(/^#(dark|light)$/);
+    if (m) {
+        theme = m[1];
+        try { localStorage.setItem('po-theme', theme); } catch (e) {}
+    }
+    document.documentElement.setAttribute('data-theme', theme);
+})();
+</script>
 __CSS__
 </head>
 <body>
 <div class="container">
+    <div class="editor-bar">
+        <div class="editor-bar-left">
+            <span class="dot dot-red"></span>
+            <span class="dot dot-yellow"></span>
+            <span class="dot dot-green"></span>
+            <span class="editor-file">~/portfolio_optimization/portfolio_optimizer.py</span>
+        </div>
+        <button type="button" class="btn-theme" id="theme-toggle">&#x1F319; Dark</button>
+    </div>
+
     <h1>Portfolio Optimizer</h1>
-    <p class="subtitle">Modern Portfolio Theory &mdash; Mean-Variance &amp; Minimal Variance</p>
+    <p class="subtitle">// Modern Portfolio Theory &mdash; Mean-Variance &amp; Minimal Variance</p>
 
     <form id="optimizer-form">
 
@@ -167,8 +189,8 @@ __CSS__
 
     <div class="error-msg" id="error-msg"></div>
 
-    <div style="text-align:center; margin-top:48px; padding-top:24px; border-top:1px solid #3c3c3c; color:#808080; font-size:12px;">
-        Created by <a href="https://github.com/davidcastilloalvarado" target="_blank" style="color:#569cd6; text-decoration:none;">David Castillo</a>
+    <div class="footer">
+        // created by <a href="https://github.com/davidcastilloalvarado" target="_blank">David Castillo</a>
     </div>
 </div>
 

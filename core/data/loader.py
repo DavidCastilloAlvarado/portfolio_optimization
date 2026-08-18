@@ -1,15 +1,12 @@
-"""Data loading utilities: fetch stock prices from Yahoo Finance with local CSV caching."""
+"""Market data access: Yahoo Finance fetch with daily CSV caching."""
 
-import os
+from datetime import datetime, timedelta, timezone
+
 import pandas as pd
 import requests
 import tqdm
-from datetime import datetime, timedelta, timezone
 
-
-def str_to_datetime(col: pd.Series) -> pd.Series:
-    """Convert a string column to datetime objects."""
-    return col.apply(lambda x: datetime.strptime(x, "%Y-%m-%d"))
+from core.data.cache import read_cache, write_cache
 
 
 def get_unix_time(days_back: int) -> tuple:
@@ -23,16 +20,8 @@ def get_unix_time(days_back: int) -> tuple:
     return unix(init_time), unix(end_time)
 
 
-def load_table(name: str, init_time: int, end_time: int) -> pd.DataFrame:
-    """Load daily close prices for a single ticker, with CSV caching in temp/."""
-    os.makedirs("temp", exist_ok=True)
-
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    cache_file = f"temp/{name}_{today_str}.csv"
-
-    if os.path.exists(cache_file):
-        return pd.read_csv(cache_file, parse_dates=["Date"])
-
+def fetch_prices(name: str, init_time: int, end_time: int) -> pd.DataFrame:
+    """Fetch daily close prices for a ticker from Yahoo Finance Query v8."""
     url = (
         f"https://query1.finance.yahoo.com/v8/finance/chart/{name}"
         f"?period1={init_time}&period2={end_time}&interval=1d"
@@ -53,11 +42,19 @@ def load_table(name: str, init_time: int, end_time: int) -> pd.DataFrame:
         raise ValueError(f"No price data returned for ticker '{name}' — ticker may be invalid or delisted.")
     dates = [datetime.fromtimestamp(ts, tz=timezone.utc) for ts in timestamps if ts is not None]
 
-    table = pd.DataFrame({
+    return pd.DataFrame({
         "Date": dates,
-        name.split('.')[0]: closes,
+        name.split(".")[0]: closes,
     })
-    table.to_csv(cache_file, index=False)
+
+
+def load_table(name: str, init_time: int, end_time: int) -> pd.DataFrame:
+    """Load daily close prices for a single ticker, with CSV caching in temp/."""
+    cached = read_cache(name)
+    if cached is not None:
+        return cached
+    table = fetch_prices(name, init_time, end_time)
+    write_cache(name, table)
     return table
 
 

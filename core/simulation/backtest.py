@@ -1,10 +1,10 @@
 import random
-import glob
-import os
 
 import numpy as np
 import pandas as pd
-from datetime import datetime, timezone
+from typing import Callable
+
+from core.data.cache import read_prices
 
 
 def final_wallet(monto, periodos, mu, sigma):
@@ -23,21 +23,14 @@ def print_rendimiento(MONTO, Ts, MU, STD, TOTAL_SIM):
 
 def _load_backtest_prices(shares, n_days):
     """Load price data from cached CSVs and return the last n_days rows."""
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     prices = pd.DataFrame()
 
     for share in shares:
-        cache_file = f"temp/{share}_{today_str}.csv"
-        if not os.path.exists(cache_file):
-            files = sorted(glob.glob(f"temp/{share}_*.csv"))
-            if files:
-                cache_file = files[-1]
-            else:
-                print(f"  ⚠ No CSV found for {share}, skipping.")
-                continue
-        df = pd.read_csv(cache_file, parse_dates=["Date"])
-        df = df.set_index("Date").sort_index()
-        prices[share] = df[share]
+        series = read_prices(share)
+        if series is None:
+            print(f"  ⚠ No CSV found for {share}, skipping.")
+            continue
+        prices[share] = series
 
     prices = prices.tail(n_days).dropna()
     return prices
@@ -58,17 +51,31 @@ def _compute_stats(values, total_invested, portfolio_returns, risk_free_annual):
     return final_return_pct, max_dd, sharpe, ret_series
 
 
-def run_backtest(monto, shares, weights, n_days, risk_free_annual=0.0, monthly_delta=0.0):
+def run_backtest(
+    monto,
+    shares,
+    weights,
+    n_days,
+    risk_free_annual=0.0,
+    monthly_delta=0.0,
+    price_loader: Callable | None = None,
+):
     """Backward simulation using real historical data from CSV files.
 
     Returns a dict with lump-sum and DCA results.
     """
-    prices = _load_backtest_prices(shares, n_days)
+    loader = price_loader or _load_backtest_prices
+    prices = loader(shares, n_days)
     if prices.empty or len(prices) < 2:
         return {"error": "Not enough price data for backtest."}
 
     daily_returns = prices.pct_change().dropna()
-    w = np.array(weights, dtype=float)
+    w_map = dict(zip(shares, weights))
+    w = np.array([w_map.get(c, 0.0) for c in daily_returns.columns], dtype=float)
+    w_sum = w.sum()
+    if w_sum <= 0:
+        return {"error": "No usable weights for the available price data."}
+    w = w / w_sum
     portfolio_returns = daily_returns.values @ w
     trading_days = len(portfolio_returns)
 

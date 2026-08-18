@@ -24,23 +24,39 @@ portfolio_optimization/
 ├── config/
 │   ├── __init__.py
 │   └── defaults.py         # All parameters as a dataclass
+├── core/                   # Domain layer
+│   ├── pipeline.py         # Shared data → optimize → backtest flow
+│   ├── data/
+│   │   ├── cache.py        # Daily CSV cache in temp/
+│   │   └── loader.py       # Yahoo Finance fetch + return preparation
+│   ├── optimization/
+│   │   ├── portfolio.py    # Portfolio mean / variance math
+│   │   ├── bounds.py       # Weight-bound resolution (global + per-ticker)
+│   │   └── solvers.py      # Mean-Variance + Min-Variance solvers
+│   └── simulation/
+│       └── backtest.py     # Lump-sum + DCA backtest
 ├── models/
 │   ├── __init__.py
 │   └── blitterman.py       # Black-Litterman + market cap utilities
-├── data_loader.py           # Yahoo Finance fetch + CSV cache
-├── optimizer.py             # Mean-Variance + Min-Variance solvers
-├── simulation.py            # Backtest logic
-├── web/
+├── web/                    # Presentation layer
 │   ├── __init__.py
 │   ├── main.py             # FastAPI web UI
 │   ├── renderer.py         # Result rendering helpers
 │   └── static/
 │       ├── index.html      # HTML template
-│       ├── styles.css      # Styles
+│       ├── styles.css      # Coder-style theme (dark default + light)
 │       └── app.js          # Client-side logic
 └── tests/
-    ├── __init__.py
-    └── test_optimizer.py   # Optimizer + config tests
+    ├── conftest.py         # Shared fixtures
+    ├── test_portfolio.py   # Portfolio math
+    ├── test_solvers.py     # Solvers + bounds integration
+    ├── test_bounds.py      # Weight-bound resolution
+    ├── test_cache.py       # CSV cache
+    ├── test_loader.py      # Fetch + return preparation (mocked HTTP)
+    ├── test_backtest.py    # Backtest engine (synthetic prices)
+    ├── test_pipeline.py    # End-to-end pipeline (mocked data)
+    ├── test_config.py      # Config dataclass
+    └── test_web_api.py     # FastAPI endpoints (mocked data)
 ```
 
 ## Quickstart
