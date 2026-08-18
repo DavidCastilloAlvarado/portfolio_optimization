@@ -61,13 +61,25 @@ __CSS__
                 <div class="form-row">
                     <div class="form-group half">
                         <label for="w_limits">Weight Limits (min,max)</label>
-                        <input type="text" id="w_limits" name="w_limits" value="0.02,0.12">
+                        <div class="wlimits-input">
+                            <input type="text" id="w_limits" name="w_limits" value="0.02,0.12">
+                            <button type="button" class="btn-per-ticker" id="btn-per-ticker" aria-expanded="false"><span class="chev">&#x25B8;</span> Per-ticker</button>
+                        </div>
                     </div>
                     <div class="form-group half">
                         <label for="risk_free_annual_perc">Risk-Free Rate (%)</label>
                         <input type="number" id="risk_free_annual_perc" name="risk_free_annual_perc" value="5" step="0.1" min="0">
                     </div>
                 </div>
+                <div class="per-ticker-panel" id="per-ticker-panel" hidden>
+                    <div class="per-ticker-head">
+                        <span>Ticker</span>
+                        <span>Min</span>
+                        <span>Max</span>
+                    </div>
+                    <div class="per-ticker-rows" id="per-ticker-rows"></div>
+                </div>
+                <input type="hidden" id="w_limits_per_ticker" name="w_limits_per_ticker" value="">
                 <div class="toggle-row">
                     <input type="checkbox" id="min_variance" name="min_variance" value="on">
                     <label for="min_variance">Minimal Variance</label>

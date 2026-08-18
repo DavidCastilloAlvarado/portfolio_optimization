@@ -21,11 +21,18 @@ def port_mean_var(W: np.ndarray, R: np.ndarray, C: np.ndarray) -> tuple:
     return port_mean(W, R), port_var(W, C)
 
 
+def _asset_bounds(w_limits, n: int) -> list:
+    """Normalize bounds: a list of n (min, max) pairs, or a single tuple broadcast to all assets."""
+    if isinstance(w_limits, list) and len(w_limits) == n:
+        return [tuple(b) for b in w_limits]
+    return [tuple(w_limits)] * n
+
+
 def solve_mean_variance(
     mean_returns: np.ndarray,
     cov_returns: np.ndarray,
     rf: float,
-    w_limits: tuple,
+    w_limits: tuple | list,
 ) -> np.ndarray:
     """Mean-Variance optimization: maximize Sharpe ratio.
 
@@ -33,7 +40,8 @@ def solve_mean_variance(
         mean_returns: Array of asset mean returns.
         cov_returns:  Covariance matrix of returns.
         rf:           Daily risk-free rate.
-        w_limits:     Tuple (min_weight, max_weight) per asset.
+        w_limits:     Single (min_weight, max_weight) tuple, or a list of
+                      per-asset (min_weight, max_weight) tuples.
 
     Returns:
         weights: Optimized portfolio weights.
@@ -45,7 +53,7 @@ def solve_mean_variance(
 
     n = len(mean_returns)
     W0 = np.ones(n) / n
-    bounds = [w_limits for _ in range(n)]
+    bounds = _asset_bounds(w_limits, n)
     constraints = {"type": "eq", "fun": lambda W: np.sum(W) - 1.0}
 
     result = scipy.optimize.minimize(
@@ -59,14 +67,15 @@ def solve_mean_variance(
 
 def solve_min_variance(
     cov_returns: np.ndarray,
-    w_limits: tuple,
+    w_limits: tuple | list,
     n_assets: int,
 ) -> np.ndarray:
     """Minimal Variance optimization via quadratic programming.
 
     Args:
         cov_returns: Covariance matrix of returns.
-        w_limits:    Tuple (min_weight, max_weight) per asset.
+        w_limits:    Single (min_weight, max_weight) tuple, or a list of
+                     per-asset (min_weight, max_weight) tuples.
         n_assets:    Number of assets.
 
     Returns:
@@ -74,7 +83,8 @@ def solve_min_variance(
     """
     cvxopt_options["show_progress"] = False
 
-    low_up_bound = [0.0] * n_assets + [w_limits[1]] * n_assets
+    bounds = _asset_bounds(w_limits, n_assets)
+    low_up_bound = [-b[0] for b in bounds] + [b[1] for b in bounds]
 
     P = matrix(np.array(cov_returns, dtype=float))
     q = matrix(0.0, (n_assets, 1))
@@ -94,7 +104,7 @@ def optimize(
     mean_returns: np.ndarray,
     cov_returns: np.ndarray,
     rf: float,
-    w_limits: tuple,
+    w_limits: tuple | list,
     min_variance: bool = False,
 ) -> tuple:
     """Run the selected optimization strategy.
@@ -103,7 +113,8 @@ def optimize(
         mean_returns: Array of asset mean returns.
         cov_returns:  Covariance matrix of returns.
         rf:           Daily risk-free rate.
-        w_limits:     Tuple (min_weight, max_weight) per asset.
+        w_limits:     Single (min_weight, max_weight) tuple, or a list of
+                      per-asset (min_weight, max_weight) tuples.
         min_variance: If True use Min-Variance, else Mean-Variance (Sharpe).
 
     Returns:

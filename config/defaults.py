@@ -4,6 +4,17 @@ from dataclasses import dataclass, field
 from typing import List
 
 
+def _parse_limit_side(s: str):
+    """Parse one side of a per-ticker bound; empty/invalid -> None (use global)."""
+    s = s.strip()
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
 @dataclass
 class Config:
     """All tunable parameters for the portfolio optimization pipeline."""
@@ -18,6 +29,7 @@ class Config:
         "AAPL", "TSM", "AMD", "GOOG",
     ])
     w_limits: tuple = (0.02, 0.12)  # (min_weight, max_weight)
+    w_limits_per_ticker: dict = field(default_factory=dict)  # ticker -> (min, max); None side falls back to global
 
     # ── Optimization ─────────────────────────────────────────────────
     min_variance: bool = False  # True = Min-Variance, False = Max Sharpe
@@ -56,12 +68,29 @@ class Config:
         else:
             w_limits = (0.02, 0.12)
 
+        w_limits_per_ticker: dict = {}
+        raw_per = data.get("w_limits_per_ticker", "")
+        if isinstance(raw_per, str) and raw_per.strip():
+            for part in raw_per.split(";"):
+                part = part.strip()
+                if not part or ":" not in part:
+                    continue
+                ticker, bounds = part.split(":", 1)
+                ticker = ticker.strip().upper()
+                if not ticker:
+                    continue
+                vals = bounds.split(",")
+                lo = _parse_limit_side(vals[0])
+                hi = _parse_limit_side(vals[1]) if len(vals) > 1 else None
+                w_limits_per_ticker[ticker] = (lo, hi)
+
         return cls(
             resample=data.get("resample", "none"),
             days=int(data.get("days", 720)),
             shares=shares,
             w_limits=w_limits,
             min_variance=data.get("min_variance", False) in (True, "true", "on", 1),
+            w_limits_per_ticker=w_limits_per_ticker,
             monto_usd=float(data.get("monto_usd", 10000)),
             monthly_delta=float(data.get("monthly_delta", 300)),
             sim_days=int(data.get("sim_days", 252)),

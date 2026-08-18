@@ -7,6 +7,7 @@ const spinner = document.getElementById('spinner');
 const spinnerText = document.getElementById('spinner-text');
 const jsonBlock = document.getElementById('json-block');
 const copyBtn = document.getElementById('copy-btn');
+let lastJson = '';
 
 // ── Reset form ─────────────────────────────────────────────────────
 document.getElementById('btn-reset').addEventListener('click', () => {
@@ -15,6 +16,12 @@ document.getElementById('btn-reset').addEventListener('click', () => {
     jsonBlock.classList.remove('visible');
     copyBtn.style.display = 'none';
     errorMsg.classList.remove('visible');
+    perTickerPanel.hidden = true;
+    btnPerTicker.classList.remove('open');
+    btnPerTicker.setAttribute('aria-expanded', 'false');
+    btnPerTicker.querySelector('.chev').innerHTML = '&#x25B8;';
+    perTickerHidden.value = '';
+    perTickerValues = {};
 });
 
 // ── Collapsible sections ───────────────────────────────────────────
@@ -25,9 +32,166 @@ document.querySelectorAll('.collapse-header').forEach(header => {
     });
 });
 
+// ── Per-ticker weight limits ───────────────────────────────────────
+const sharesInput = document.getElementById('shares');
+const wLimitsInput = document.getElementById('w_limits');
+const perTickerPanel = document.getElementById('per-ticker-panel');
+const perTickerRows = document.getElementById('per-ticker-rows');
+const perTickerHidden = document.getElementById('w_limits_per_ticker');
+const btnPerTicker = document.getElementById('btn-per-ticker');
+let perTickerValues = {};
+
+function parseTickers(text) {
+    const seen = new Set();
+    const tickers = [];
+    for (const raw of (text || '').split(',')) {
+        const t = raw.trim().toUpperCase();
+        if (!t || seen.has(t)) continue;
+        seen.add(t);
+        tickers.push(t);
+    }
+    return tickers;
+}
+
+function parseGlobalLimits() {
+    const parts = (wLimitsInput.value || '').split(',').map(x => parseFloat(x.trim()));
+    const min = Number.isFinite(parts[0]) ? parts[0] : 0.02;
+    const max = Number.isFinite(parts[1]) ? parts[1] : 0.12;
+    return {
+        min: Math.min(Math.max(min, 0), 1),
+        max: Math.min(Math.max(max, 0), 1),
+    };
+}
+
+function buildPerTickerRows() {
+    const tickers = parseTickers(sharesInput.value);
+    const g = parseGlobalLimits();
+    perTickerRows.innerHTML = '';
+    for (const t of tickers) {
+        const v = perTickerValues[t] || { min: g.min, max: g.max };
+        perTickerValues[t] = v;
+        const row = document.createElement('div');
+        row.className = 'per-ticker-row';
+        row.dataset.ticker = t;
+        row.innerHTML = `
+            <span class="pt-name">${escapeHtml(t)}</span>
+            <div class="pt-bound">
+                <input type="range" class="pt-range" min="0" max="1" step="0.01" value="${v.min}">
+                <input type="number" class="pt-num" min="0" max="1" step="0.01" value="${v.min}">
+            </div>
+            <div class="pt-bound">
+                <input type="range" class="pt-range" min="0" max="1" step="0.01" value="${v.max}">
+                <input type="number" class="pt-num" min="0" max="1" step="0.01" value="${v.max}">
+            </div>
+        `;
+        perTickerRows.appendChild(row);
+    }
+    if (tickers.length === 0) {
+        perTickerRows.innerHTML = '<div class="pt-empty">Add tickers in the Assets section</div>';
+    }
+}
+
+function setBound(row, idx, value) {
+    const ranges = row.querySelectorAll('.pt-range');
+    const nums = row.querySelectorAll('.pt-num');
+    let v = Math.min(Math.max(value, 0), 1);
+    if (idx === 0) v = Math.min(v, parseFloat(ranges[1].value));
+    else v = Math.max(v, parseFloat(ranges[0].value));
+    ranges[idx].value = v;
+    nums[idx].value = v;
+    perTickerValues[row.dataset.ticker] = {
+        min: parseFloat(ranges[0].value),
+        max: parseFloat(ranges[1].value),
+    };
+}
+
+perTickerRows.addEventListener('input', (e) => {
+    const row = e.target.closest('.per-ticker-row');
+    if (!row) return;
+    if (e.target.classList.contains('pt-range')) {
+        const idx = row.querySelector('.pt-range') === e.target ? 0 : 1;
+        setBound(row, idx, parseFloat(e.target.value));
+    } else if (e.target.classList.contains('pt-num')) {
+        const idx = row.querySelectorAll('.pt-num')[0] === e.target ? 0 : 1;
+        const v = parseFloat(e.target.value);
+        if (Number.isFinite(v)) setBound(row, idx, v);
+    }
+});
+
+perTickerRows.addEventListener('change', (e) => {
+    if (!e.target.classList.contains('pt-num')) return;
+    const row = e.target.closest('.per-ticker-row');
+    if (!row) return;
+    const idx = row.querySelectorAll('.pt-num')[0] === e.target ? 0 : 1;
+    const v = parseFloat(e.target.value);
+    setBound(row, idx, Number.isFinite(v) ? v : 0);
+});
+
+btnPerTicker.addEventListener('click', () => {
+    const open = perTickerPanel.hidden;
+    perTickerPanel.hidden = !open;
+    btnPerTicker.classList.toggle('open', open);
+    btnPerTicker.setAttribute('aria-expanded', String(open));
+    btnPerTicker.querySelector('.chev').innerHTML = open ? '&#x25BE;' : '&#x25B8;';
+    if (open) buildPerTickerRows();
+    else perTickerHidden.value = '';
+});
+
+sharesInput.addEventListener('input', () => {
+    if (!perTickerPanel.hidden) buildPerTickerRows();
+});
+
+function syncPerTickerPayload() {
+    if (perTickerPanel.hidden) {
+        perTickerHidden.value = '';
+        return;
+    }
+    const parts = [];
+    for (const row of perTickerRows.querySelectorAll('.per-ticker-row')) {
+        let v = perTickerValues[row.dataset.ticker];
+        if (!v) {
+            const ranges = row.querySelectorAll('.pt-range');
+            v = { min: parseFloat(ranges[0].value), max: parseFloat(ranges[1].value) };
+        }
+        parts.push(row.dataset.ticker + ':' + v.min + ',' + v.max);
+    }
+    perTickerHidden.value = parts.join(';');
+}
+
+function validateWeightLimits() {
+    const tickers = parseTickers(sharesInput.value);
+    if (tickers.length === 0) return null;
+    let minSum = 0;
+    let maxSum = 0;
+    if (perTickerPanel.hidden) {
+        const g = parseGlobalLimits();
+        minSum = g.min * tickers.length;
+        maxSum = g.max * tickers.length;
+    } else {
+        for (const t of tickers) {
+            const v = perTickerValues[t];
+            if (!v) continue;
+            minSum += v.min;
+            maxSum += v.max;
+        }
+    }
+    if (minSum > 1 + 1e-9) {
+        return 'Sum of min limits is ' + (minSum * 100).toFixed(1) + '% — must be 100% or less.';
+    }
+    if (maxSum < 1 - 1e-9) {
+        return 'Sum of max limits is ' + (maxSum * 100).toFixed(1) + '% — must be at least 100%.';
+    }
+    return null;
+}
+
 // ── Form submit ────────────────────────────────────────────────────
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const limitsErr = validateWeightLimits();
+    if (limitsErr) {
+        renderError(limitsErr);
+        return;
+    }
     errorMsg.classList.remove('visible');
     resultsDiv.classList.remove('visible');
     jsonBlock.classList.remove('visible');
@@ -37,6 +201,7 @@ form.addEventListener('submit', async (e) => {
     spinnerText.textContent = 'Fetching data...';
     spinner.classList.add('visible');
 
+    syncPerTickerPayload();
     const fd = new FormData(form);
     const mv = fd.get('min_variance');
     if (!mv) fd.delete('min_variance');
@@ -189,8 +354,8 @@ function renderResults(data) {
     }
 
     // JSON with syntax highlighting
-    const raw = JSON.stringify(data, null, 2);
-    jsonBlock.innerHTML = syntaxHighlight(raw);
+    lastJson = JSON.stringify(data, null, 2);
+    jsonBlock.innerHTML = syntaxHighlight(lastJson);
     copyBtn.style.display = 'inline-flex';
 }
 
@@ -211,10 +376,34 @@ document.getElementById('toggle-json').addEventListener('click', () => {
 });
 
 // ── Copy ───────────────────────────────────────────────────────────
+function copyToClipboard(text) {
+    if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text);
+    }
+    return new Promise((resolve, reject) => {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try {
+            document.execCommand('copy') ? resolve() : reject(new Error('copy failed'));
+        } catch (err) {
+            reject(err);
+        } finally {
+            document.body.removeChild(ta);
+        }
+    });
+}
+
 copyBtn.addEventListener('click', () => {
-    navigator.clipboard.writeText(jsonBlock.textContent).then(() => {
+    copyToClipboard(lastJson).then(() => {
         copyBtn.innerHTML = '&#x2705; Copied!';
         setTimeout(() => { copyBtn.innerHTML = '&#x1F4CB; Copy'; }, 1500);
+    }).catch(() => {
+        renderError('Copy to clipboard failed. Use "Show JSON" and copy the text manually.');
     });
 });
 

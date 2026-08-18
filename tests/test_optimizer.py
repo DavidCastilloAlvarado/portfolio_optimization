@@ -83,6 +83,21 @@ class TestSolveMeanVariance:
         assert abs(np.sum(w) - 1.0) < 1e-6
         assert all(0.1 - 1e-6 <= wi <= 0.5 + 1e-6 for wi in w)
 
+    def test_per_asset_bounds(self):
+        """Should respect a list of per-asset (min, max) tuples."""
+        mean_ret = np.array([0.001, 0.002, 0.0015])
+        cov_ret = np.array([
+            [0.0004, 0.0001, 0.00005],
+            [0.0001, 0.0009, 0.0002],
+            [0.00005, 0.0002, 0.0006],
+        ])
+        rf = 0.0001
+        w = solve_mean_variance(mean_ret, cov_ret, rf, [(0.0, 1.0), (0.1, 0.5), (0.0, 1.0)])
+        assert len(w) == 3
+        assert abs(np.sum(w) - 1.0) < 1e-6
+        assert 0.1 - 1e-6 <= w[1] <= 0.5 + 1e-6
+        assert all(0.0 <= wi <= 1.0 + 1e-6 for wi in w)
+
 
 # ── solve_min_variance ──────────────────────────────────────────────
 
@@ -110,6 +125,32 @@ class TestSolveMinVariance:
         assert len(w) == 3
         assert abs(np.sum(w) - 1.0) < 1e-6
         assert all(wi <= 0.4 + 1e-6 for wi in w)
+
+    def test_per_asset_bounds(self):
+        """Should respect a list of per-asset (min, max) tuples."""
+        cov_ret = np.array([
+            [0.0004, 0.0001, 0.00005],
+            [0.0001, 0.0009, 0.0002],
+            [0.00005, 0.0002, 0.0006],
+        ])
+        w = solve_min_variance(cov_ret, [(0.0, 0.6), (0.1, 0.3), (0.0, 1.0)], 3)
+        assert len(w) == 3
+        assert abs(np.sum(w) - 1.0) < 1e-6
+        assert 0.0 <= w[0] <= 0.6 + 1e-6
+        assert 0.1 - 1e-6 <= w[1] <= 0.3 + 1e-6
+        assert 0.0 <= w[2] <= 1.0 + 1e-6
+
+    def test_min_bound_enforced(self):
+        """Min bound should be applied (not hardcoded to 0)."""
+        cov_ret = np.array([
+            [0.0004, 0.0001],
+            [0.0001, 0.0009],
+        ])
+        w = solve_min_variance(cov_ret, (0.3, 0.8), 2)
+        assert len(w) == 2
+        assert abs(np.sum(w) - 1.0) < 1e-6
+        assert all(0.3 - 1e-6 <= wi <= 0.8 + 1e-6 for wi in w)
+        assert w[1] == pytest.approx(0.3, abs=1e-4)
 
 
 # ── optimize (wrapper) ──────────────────────────────────────────────
@@ -215,3 +256,14 @@ class TestConfig:
         cfg = Config.from_dict({})
         assert cfg.shares == []
         assert cfg.w_limits == (0.02, 0.12)
+        assert cfg.w_limits_per_ticker == {}
+
+    def test_from_dict_per_ticker(self):
+        from config.defaults import Config
+        data = {
+            "shares": "QQQM,SCHD",
+            "w_limits": "0.02,0.12",
+            "w_limits_per_ticker": "qqqm:0.02,0.12;SCHD:0.05,",
+        }
+        cfg = Config.from_dict(data)
+        assert cfg.w_limits_per_ticker == {"QQQM": (0.02, 0.12), "SCHD": (0.05, None)}

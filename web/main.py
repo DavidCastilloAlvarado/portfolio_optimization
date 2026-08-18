@@ -34,6 +34,7 @@ async def optimize_endpoint(
     days: str = Form("720"),
     shares: str = Form(""),
     w_limits: str = Form("0.02,0.12"),
+    w_limits_per_ticker: str = Form(""),
     min_variance: str = Form("off"),
     monto_usd: str = Form("10000"),
     monthly_delta: str = Form("300"),
@@ -47,6 +48,7 @@ async def optimize_endpoint(
             "days": days,
             "shares": shares,
             "w_limits": w_limits,
+            "w_limits_per_ticker": w_limits_per_ticker,
             "min_variance": min_variance,
             "monto_usd": monto_usd,
             "monthly_delta": monthly_delta,
@@ -65,9 +67,20 @@ async def optimize_endpoint(
         mean_returns = np.array(returns.mean())
         cov_returns = np.array(returns.cov())
 
+        gmin, gmax = cfg.w_limits
+        per = {t.upper(): b for t, b in cfg.w_limits_per_ticker.items()}
+        asset_bounds = []
+        for t in names:
+            p = per.get(t.upper())
+            if p is None:
+                asset_bounds.append((gmin, gmax))
+            else:
+                lo, hi = p
+                asset_bounds.append((lo if lo is not None else gmin, hi if hi is not None else gmax))
+
         # Optimization
         weights, port_mean_val, port_std, strategy = optimize(
-            mean_returns.copy(), cov_returns.copy(), cfg.risk_free, cfg.w_limits, cfg.min_variance,
+            mean_returns.copy(), cov_returns.copy(), cfg.risk_free, asset_bounds, cfg.min_variance,
         )
 
         # Build result
