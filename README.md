@@ -95,7 +95,7 @@ All parameters are defined in `config/defaults.py`. The default configuration:
 |-----------|---------|-------------|
 | `resample` | `"none"` | Data frequency: `"none"`, `"week"`, `"month"` |
 | `days` | `720` | Calendar days of historical data |
-| `shares` | `['XLU', 'QQQ', ...]` | Ticker symbols |
+| `shares` | `['XLU', 'QQQ', ...]` | Ticker symbols and ISINs |
 | `w_limits` | `(0.02, 0.12)` | Min/max weight per asset |
 | `min_variance` | `False` | `True` = Min-Variance, `False` = Max Sharpe |
 | `monto_usd` | `10000` | Initial investment (USD) |

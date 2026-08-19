@@ -27,6 +27,7 @@ class Config:
     shares: List[str] = field(default_factory=lambda: [
         "XLU", "QQQ", "SCHD", "GLDM", "SPY",
         "AAPL", "TSM", "AMD", "GOOG",
+        "IE00BFMXXD54", "IE00B53SZB19", "IE00B4ND3602",
     ])
     w_limits: tuple = (0.02, 0.12)  # (min_weight, max_weight)
     w_limits_per_ticker: dict = field(default_factory=dict)  # ticker -> (min, max); None side falls back to global
