@@ -1,8 +1,9 @@
-"""Tests for core/simulation/backtest.py (synthetic prices, no disk I/O)."""
+"""Tests for core/simulation/backtest.py (synthetic prices)."""
 
 import numpy as np
 import pandas as pd
 import pytest
+from core.data import cache as cache_mod
 from core.simulation import run_backtest
 
 
@@ -80,3 +81,20 @@ class TestRunBacktest:
             price_loader=lambda s, n: prices,
         )
         assert "lump_sum" in result
+
+
+class TestMixedSourceCache:
+    def test_mixed_source_cache_files_align(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cache_mod, "CACHE_DIR", str(tmp_path))
+        dates = pd.bdate_range("2026-01-01", periods=30)
+        cache_mod.write_cache("A", pd.DataFrame({
+            "Date": pd.to_datetime(dates, utc=True) + pd.Timedelta(hours=13, minutes=30),
+            "A": 100.0 * (1.01 ** np.arange(30)),
+        }))
+        cache_mod.write_cache("B", pd.DataFrame({
+            "Date": pd.to_datetime(dates, utc=True),
+            "B": 100.0 * (1.02 ** np.arange(30)),
+        }))
+        result = run_backtest(10000, ["A", "B"], [0.5, 0.5], 30, monthly_delta=0.0)
+        assert "lump_sum" in result
+        assert result["lump_sum"]["trading_days"] == 29

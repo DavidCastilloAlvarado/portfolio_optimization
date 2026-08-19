@@ -20,7 +20,9 @@ def read_cache(ticker: str) -> pd.DataFrame | None:
     path = cache_path(ticker)
     if not os.path.exists(path):
         return None
-    return pd.read_csv(path, parse_dates=["Date"])
+    df = pd.read_csv(path, parse_dates=["Date"])
+    df["Date"] = pd.to_datetime(df["Date"], utc=True)
+    return df
 
 
 def write_cache(ticker: str, table: pd.DataFrame) -> None:
@@ -41,5 +43,5 @@ def read_prices(ticker: str) -> pd.Series | None:
     if path is None:
         return None
     df = pd.read_csv(path, parse_dates=["Date"])
-    df = df.set_index("Date").sort_index()
-    return df[ticker]
+    index = pd.to_datetime(df["Date"], utc=True).dt.normalize()
+    return df.set_index(index).sort_index()[ticker]

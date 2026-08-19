@@ -34,6 +34,7 @@ def test_write_and_read_roundtrip(cache_dir):
     cached = read_cache("AAA")
     assert list(cached["AAA"]) == [10.0, 11.0, 12.0]
     assert len(cached) == 3
+    assert str(cached["Date"].dtype) == "datetime64[ns, UTC]"
 
 
 def test_latest_cache_file_missing(cache_dir):
@@ -51,6 +52,16 @@ def test_read_prices(cache_dir):
     write_cache("AAA", _table([10.0, 11.0, 12.0]))
     series = read_prices("AAA")
     assert list(series) == [10.0, 11.0, 12.0]
+
+
+def test_read_prices_normalizes_to_utc_dates(cache_dir):
+    table = pd.DataFrame({
+        "Date": pd.to_datetime(["2026-01-01 13:30:00", "2026-01-02 13:30:00"], utc=True),
+        "AAA": [10.0, 11.0],
+    })
+    write_cache("AAA", table)
+    series = read_prices("AAA")
+    assert list(series.index) == pd.to_datetime(["2026-01-01", "2026-01-02"], utc=True).tolist()
 
 
 def test_read_prices_missing(cache_dir):

@@ -12,7 +12,7 @@ A Python tool that finds the optimal asset allocation for your investment portfo
 - **Minimal Variance** — minimizes portfolio risk
 - **Historical backtest** — lump-sum and DCA strategies
 - **Web UI** — configure everything via browser, no CLI needed
-- **Yahoo Finance data** — automatic fetch with CSV caching
+- **Multi-source data** — Yahoo Finance (tickers) with JustETF fallback (ISINs), automatic fetch with CSV caching
 
 ## Project Structure
 
@@ -103,11 +103,20 @@ All parameters are defined in `config/defaults.py`. The default configuration:
 | `sim_days` | `252` | Trading days for simulation |
 | `risk_free_annual_perc` | `5` | Annual risk-free rate (%) |
 
+## Data Sources
+
+Daily close prices come from two sources, tried in order:
+
+1. **Yahoo Finance** (primary) — [Query v8 API](https://github.com/LearnCash/finance-yahoo), looked up by ticker symbol (e.g. `SPY`, `AAPL`).
+2. **JustETF** (fallback) — [JustETF performance-chart API](https://www.justetf.com), looked up by ISIN (e.g. `IE00BFMXXD54`). Used automatically when Yahoo fails **and** the symbol matches the ISIN pattern: 12 characters — 2-letter country code, 9 alphanumeric characters, and a numeric check digit (`^[A-Z]{2}[A-Z0-9]{9}[0-9]$`). Plain tickers never fall back.
+
+Both sources are cached daily under `temp/` (`{SYMBOL}_{YYYY-MM-DD}.csv`), so each symbol is fetched at most once per day regardless of source.
+
 ## How It Works
 
 ### 1. Data Loading
 
-Fetches daily close prices from Yahoo Finance via the [Query v8 API](https://github.com/LearnCash/finance-yahoo). Results are cached locally under `temp/` to avoid repeated network calls.
+Fetches daily close prices from Yahoo Finance (primary) with an automatic JustETF fallback for ISINs — see [Data Sources](#data-sources). Results are cached locally under `temp/` to avoid repeated network calls.
 
 Computes percentage returns (daily, weekly, or monthly) with time-weighted interpolation for missing values.
 
@@ -138,7 +147,7 @@ Reports: final value, total return %, max drawdown, annualized Sharpe ratio.
 | [numpy](https://numpy.org/) | Numerical computing |
 | [scipy](https://scipy.org/) | SLSQP optimization |
 | [cvxopt](https://cvxopt.org/) | Quadratic programming |
-| [requests](https://requests.readthedocs.io/) | HTTP client for Yahoo Finance |
+| [requests](https://requests.readthedocs.io/) | HTTP client for Yahoo Finance and JustETF |
 | [tqdm](https://tqdm.github.io/) | Progress bars |
 | [fastapi](https://fastapi.tiangolo.com/) | Web API framework |
 | [uvicorn](https://www.uvicorn.org/) | ASGI server |
