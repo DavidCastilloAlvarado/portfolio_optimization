@@ -1,7 +1,9 @@
 """Market data access: Yahoo Finance fetch, JustETF fallback, daily CSV caching."""
 
+import json
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pandas as pd
 import requests
@@ -11,10 +13,36 @@ from core.data.cache import read_cache, write_cache
 
 ISIN_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
 
+ISIN_MAP_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "isin_ticker_map.json"
+
+
+def _load_isin_ticker_map() -> dict[str, str]:
+    try:
+        raw = ISIN_MAP_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            f"ISIN map file not found: {ISIN_MAP_PATH}. Create it with one \"ISIN\": \"TICKER\" pair per line."
+        )
+    try:
+        raw_map = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON in ISIN map {ISIN_MAP_PATH}: {exc}") from exc
+    if not isinstance(raw_map, dict):
+        raise ValueError(f"ISIN map {ISIN_MAP_PATH} must be a JSON object with \"ISIN\": \"TICKER\" pairs")
+    return {str(k).strip().upper(): str(v).strip().upper() for k, v in raw_map.items()}
+
+
+ISIN_TICKER_MAP: dict[str, str] = _load_isin_ticker_map()
+
 
 def is_isin(name: str) -> bool:
     """True if the symbol matches the ISIN pattern (2-letter country code + 9 alphanumerics + check digit)."""
     return bool(ISIN_RE.match(name.strip().upper()))
+
+
+def ticker_for(name: str) -> str | None:
+    """Display ticker mapped to an ISIN for easy reading, or None for plain tickers."""
+    return ISIN_TICKER_MAP.get(name.strip().upper())
 
 
 def get_unix_time(days_back: int) -> tuple:

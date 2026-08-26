@@ -64,6 +64,17 @@ const perTickerHidden = document.getElementById('w_limits_per_ticker');
 const btnPerTicker = document.getElementById('btn-per-ticker');
 let perTickerValues = {};
 
+// ── ISIN → display ticker ──────────────────────────────────────────
+const ISIN_TICKER_MAP = window.ISIN_TICKER_MAP || {};
+function tickerFor(name) {
+    return ISIN_TICKER_MAP[name] || null;
+}
+function assetLabel(name) {
+    const t = tickerFor(name);
+    if (!t) return `<span class="asset-ticker">${escapeHtml(name)}</span>`;
+    return `<span class="asset-ticker">${escapeHtml(t)}</span><span class="asset-isin">${escapeHtml(name)}</span>`;
+}
+
 function parseTickers(text) {
     const seen = new Set();
     const tickers = [];
@@ -97,7 +108,7 @@ function buildPerTickerRows() {
         row.className = 'per-ticker-row';
         row.dataset.ticker = t;
         row.innerHTML = `
-            <span class="pt-name">${escapeHtml(t)}</span>
+            <span class="pt-name">${assetLabel(t)}</span>
             <div class="pt-bound">
                 <input type="range" class="pt-range" min="0" max="1" step="0.01" value="${v.min}">
                 <input type="number" class="pt-num" min="0" max="1" step="0.01" value="${v.min}">
@@ -277,7 +288,7 @@ function renderResults(data) {
             const tr = document.createElement('tr');
             const barW = maxW > 0 ? (w.weight_pct / maxW * 100) : 0;
             tr.innerHTML = `
-                <td class="ticker">${w.ticker}</td>
+                <td class="ticker">${assetLabel(w.ticker)}</td>
                 <td class="bar-cell"><div class="bar" style="width:${barW}%"></div></td>
                 <td class="pct">${w.weight_pct.toFixed(2)}%</td>
                 <td class="usd">$${w.usd.toFixed(2)}</td>

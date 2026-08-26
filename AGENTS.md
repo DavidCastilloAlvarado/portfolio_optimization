@@ -25,7 +25,8 @@ portfolio_optimization/
 ├── doc/                    # Reference docs (gitignored), e.g. etfs.md
 ├── config/
 │   ├── __init__.py
-│   └── defaults.py         # Config dataclass (all tunable parameters)
+│   ├── defaults.py         # Config dataclass (all tunable parameters)
+│   └── isin_ticker_map.json  # ISIN → display ticker map (user-editable JSON, no code)
 ├── core/                   # Domain layer
 │   ├── pipeline.py         # Shared data → optimize → backtest flow (run_pipeline)
 │   ├── data/
@@ -100,6 +101,7 @@ poetry run poe test
 - **Date convention**: every table returned by `load_table` has a `Date` column of `datetime64[ns, UTC]` normalized to midnight (`.dt.normalize()`). Yahoo timestamps carry the US market-open time (13:30 UTC) while JustETF uses midnight — never drop the normalization, or mixed-source merges/backtests silently break
 - `read_prices()` (cache → backtest) applies the same UTC midnight normalization
 - `prepare_returns()` handles resampling (daily/weekly/monthly)
+- **ISIN → display ticker**: the map lives in `config/isin_ticker_map.json` (plain JSON, `"ISIN": "TICKER"` pairs — users add entries there without touching code). `core/data/loader.py` loads it at import into `ISIN_TICKER_MAP` via `_load_isin_ticker_map()` (missing file or invalid JSON raise with a message pointing at the file); `ticker_for()` resolves a display ticker. Single source of truth: the CLI (`main.py`), the web renderer (`symbol` field per weight) and the browser UI (injected as `__ISIN_MAP__` → `window.ISIN_TICKER_MAP`) all resolve from it. Data fetching still keys on the ISIN — the map is display-only.
 
 ### Optimization
 - `core/optimization/solvers.py` exports `optimize()` as the main entry point

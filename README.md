@@ -23,7 +23,8 @@ portfolio_optimization/
 ├── README.md
 ├── config/
 │   ├── __init__.py
-│   └── defaults.py         # All parameters as a dataclass
+│   ├── defaults.py         # All parameters as a dataclass
+│   └── isin_ticker_map.json  # ISIN → display ticker map (edit freely, no code)
 ├── core/                   # Domain layer
 │   ├── pipeline.py         # Shared data → optimize → backtest flow
 │   ├── data/
@@ -111,6 +112,38 @@ Daily close prices come from two sources, tried in order:
 2. **JustETF** (fallback) — [JustETF performance-chart API](https://www.justetf.com), looked up by ISIN (e.g. `IE00BFMXXD54`). Used automatically when Yahoo fails **and** the symbol matches the ISIN pattern: 12 characters — 2-letter country code, 9 alphanumeric characters, and a numeric check digit (`^[A-Z]{2}[A-Z0-9]{9}[0-9]$`). Plain tickers never fall back.
 
 Both sources are cached daily under `temp/` (`{SYMBOL}_{YYYY-MM-DD}.csv`), so each symbol is fetched at most once per day regardless of source.
+
+## ISIN → Ticker Map
+
+When you use ISINs, every view shows the mapped display ticker next to the reference ISIN — the web results table, the per-ticker weight panel, the CLI output, and the raw JSON (e.g. `IE00BFMXXD54` shows as `VUAA` + `IE00BFMXXD54`).
+
+**The map lives in a single file: [`config/isin_ticker_map.json`](config/isin_ticker_map.json).**
+
+It is plain JSON — **no code changes are needed to add or edit entries**. One mapping per line, `"ISIN": "TICKER"`:
+
+```json
+{
+  "IE00BFMXXD54": "VUAA",
+  "IE00B53SZB19": "CNDX",
+  "IE00B4ND3602": "IGLN"
+}
+```
+
+To add a new ISIN, open the file and insert one more line (watch the trailing commas):
+
+```json
+{
+  "IE00BFMXXD54": "VUAA",
+  "IE00B53SZB19": "CNDX",
+  "IE00XXXXXXXX": "TICK"
+}
+```
+
+Notes:
+
+- ISINs not in the map simply show as the bare ISIN (no ticker) — nothing breaks.
+- The map is **display-only**: data is still fetched by ticker (Yahoo) or ISIN (JustETF).
+- Invalid JSON stops the app at startup with a message pointing at the exact error in the file, so typos are easy to fix.
 
 ## How It Works
 

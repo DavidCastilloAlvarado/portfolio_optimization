@@ -1,11 +1,13 @@
 """FastAPI web UI for portfolio optimization."""
 
+import json
 import traceback
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse
 from fastapi.responses import JSONResponse
 
 from config.defaults import Config
+from core.data.loader import ISIN_TICKER_MAP
 from core.pipeline import run_pipeline
 from web.renderer import build_optimization_result, build_backtest_result
 
@@ -15,12 +17,14 @@ app = FastAPI(title="Portfolio Optimizer", version="1.0.0")
 _HTML = open("web/static/index.html").read()
 _CSS = open("web/static/styles.css").read()
 _JS = open("web/static/app.js").read()
+_ISIN_MAP = json.dumps(ISIN_TICKER_MAP)
 
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
     """Serve the web UI."""
     body = _HTML.replace("__CSS__", f"<style>\n{_CSS}\n</style>")
+    body = body.replace("__ISIN_MAP__", _ISIN_MAP)
     body = body.replace("__JS__", _JS)
     return HTMLResponse(body)
 

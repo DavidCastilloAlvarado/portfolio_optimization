@@ -13,6 +13,7 @@ from core.data.loader import (
     is_isin,
     load_table,
     prepare_returns,
+    ticker_for,
 )
 
 
@@ -121,6 +122,52 @@ class TestIsIsin:
         assert not is_isin("IE00BFMXXD545")
         assert not is_isin("1E00BFMXXD54")
         assert not is_isin("IE00BFMXXD5A")
+
+
+class TestIsinTickerMapFile:
+    def test_map_file_matches_loader(self):
+        import json
+        from core.data.loader import ISIN_MAP_PATH, ISIN_TICKER_MAP
+        raw = json.loads(ISIN_MAP_PATH.read_text(encoding="utf-8"))
+        assert ISIN_TICKER_MAP == {k.upper(): v.upper() for k, v in raw.items()}
+
+    def test_invalid_json_raises_with_file_path(self, tmp_path, monkeypatch):
+        from core.data.loader import ISIN_MAP_PATH, _load_isin_ticker_map
+        bad = tmp_path / "bad.json"
+        bad.write_text("{ not valid json", encoding="utf-8")
+        monkeypatch.setattr(loader_mod, "ISIN_MAP_PATH", bad)
+        with pytest.raises(ValueError, match="Invalid JSON in ISIN map"):
+            _load_isin_ticker_map()
+
+    def test_missing_file_raises_with_file_path(self, tmp_path, monkeypatch):
+        from core.data.loader import _load_isin_ticker_map
+        missing = tmp_path / "nope.json"
+        monkeypatch.setattr(loader_mod, "ISIN_MAP_PATH", missing)
+        with pytest.raises(FileNotFoundError, match="ISIN map file not found"):
+            _load_isin_ticker_map()
+
+    def test_non_object_json_raises(self, tmp_path, monkeypatch):
+        from core.data.loader import _load_isin_ticker_map
+        bad = tmp_path / "list.json"
+        bad.write_text('["IE00BFMXXD54"]', encoding="utf-8")
+        monkeypatch.setattr(loader_mod, "ISIN_MAP_PATH", bad)
+        with pytest.raises(ValueError, match="JSON object"):
+            _load_isin_ticker_map()
+
+
+class TestTickerFor:
+    def test_maps_known_isin(self):
+        assert ticker_for("IE00BFMXXD54") == "VUAA"
+        assert ticker_for("IE00BK5BQT80") == "VWRA"
+
+    def test_lowercase_isin_maps(self):
+        assert ticker_for("ie00bfmxxd54") == "VUAA"
+
+    def test_unknown_isin_returns_none(self):
+        assert ticker_for("IE00BFMXXD51") is None
+
+    def test_plain_ticker_returns_none(self):
+        assert ticker_for("AAPL") is None
 
 
 class TestFetchPricesJustetf:

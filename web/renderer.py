@@ -3,6 +3,8 @@
 import numpy as np
 from typing import Any
 
+from core.data.loader import ticker_for
+
 
 def build_optimization_result(
     weights: list[float],
@@ -18,6 +20,7 @@ def build_optimization_result(
     for name, w in zip(names, weights):
         weights_resp.append({
             "ticker": name,
+            "symbol": ticker_for(name),
             "weight_pct": float(w * 100),
             "usd": float(w * monto_usd),
         })

@@ -34,6 +34,9 @@ def test_index_serves_ui(client):
     assert "Portfolio Optimizer" in res.text
     assert "per-ticker-panel" in res.text
     assert "<style>" in res.text
+    assert "window.ISIN_TICKER_MAP" in res.text
+    assert "IE00BFMXXD54" in res.text
+    assert "VUAA" in res.text
 
 
 def test_optimize_success(client, mock_data):
@@ -58,6 +61,25 @@ def test_optimize_success(client, mock_data):
     assert abs(sum(w["weight_pct"] for w in data["weights"]) - 100.0) < 1e-6
     assert data["portfolio_return_pct"] > 0
     assert "backtest" not in data
+
+
+def test_optimize_isin_shares_include_symbol(client, monkeypatch):
+    dates = pd.bdate_range("2026-01-01", periods=60)
+    isin = "IE00BFMXXD54"
+    monkeypatch.setattr(pipeline, "bulk_stocks", lambda shares, days: pd.DataFrame({
+        "Date": dates,
+        isin: 100 * (1.01) ** np.arange(60),
+        "BBB": 100 * (1.005) ** np.arange(60),
+    }))
+    monkeypatch.setattr(pipeline, "run_backtest", lambda *a, **k: None)
+    res = client.post(
+        "/optimize",
+        data={"shares": f"{isin},BBB", "w_limits": "0.02,0.9", "monthly_delta": "0"},
+    )
+    assert res.status_code == 200
+    weights = {w["ticker"]: w for w in res.json()["weights"]}
+    assert weights[isin]["symbol"] == "VUAA"
+    assert weights["BBB"]["symbol"] is None
 
 
 def test_optimize_min_variance_with_per_ticker(client, mock_data):
