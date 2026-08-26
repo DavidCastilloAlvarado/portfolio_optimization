@@ -46,8 +46,8 @@ class Config:
     # ── Computed ──────────────────────────────────────────────────────
     @property
     def risk_free(self) -> float:
-        """Daily risk-free rate derived from annual percentage."""
-        return (1 + self.risk_free_annual_perc / 100) ** (1 / 365) - 1
+        """Daily risk-free rate derived from annual percentage on a 252-trading-day basis."""
+        return (1 + self.risk_free_annual_perc / 100) ** (1 / 252) - 1
 
     def get_resample(self) -> str | None:
         """Return resample string; 'none' → None."""

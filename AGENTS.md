@@ -147,7 +147,9 @@ poetry run poe test
 
 ## Risk-Free Rate Calculation
 
-- Optimizer (daily): `(1 + annual_perc/100) ** (1/365) - 1` — `Config.risk_free`
+Both the optimizer and backtest use the 252-trading-day basis (consistent with the display annualization in `web/renderer.py`):
+
+- Optimizer (daily): `(1 + annual_perc/100) ** (1/252) - 1` — `Config.risk_free`
 - Backtest (daily): `(1 + annual_rate) ** (1/252) - 1`
 
 ## Backtest Stats

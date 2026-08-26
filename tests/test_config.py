@@ -19,7 +19,7 @@ class TestConfig:
 
     def test_risk_free_computation(self):
         cfg = Config()
-        expected = (1 + 5 / 100) ** (1 / 365) - 1
+        expected = (1 + 5 / 100) ** (1 / 252) - 1
         assert cfg.risk_free == pytest.approx(expected)
 
     def test_get_resample_none(self):

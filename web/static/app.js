@@ -25,6 +25,7 @@ themeToggle.addEventListener('click', () => {
 // ── Reset form ─────────────────────────────────────────────────────
 document.getElementById('btn-reset').addEventListener('click', () => {
     form.reset();
+    syncMinVarianceWarning();
     resultsDiv.classList.remove('visible');
     jsonBlock.classList.remove('visible');
     copyBtn.style.display = 'none';
@@ -44,6 +45,15 @@ document.querySelectorAll('.collapse-header').forEach(header => {
         header.parentElement.classList.toggle('open');
     });
 });
+
+// ── Min-variance risk-free warning ─────────────────────────────────
+const minVarianceCheckbox = document.getElementById('min_variance');
+const minVarianceWarning = document.getElementById('min-variance-warning');
+function syncMinVarianceWarning() {
+    minVarianceWarning.classList.toggle('visible', minVarianceCheckbox.checked);
+}
+minVarianceCheckbox.addEventListener('change', syncMinVarianceWarning);
+syncMinVarianceWarning();
 
 // ── Per-ticker weight limits ───────────────────────────────────────
 const sharesInput = document.getElementById('shares');

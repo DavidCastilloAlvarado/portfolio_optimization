@@ -26,15 +26,15 @@ def build_optimization_result(
     port_std_daily = float(port_std)
     if port_std_daily > 0:
         sharpe_daily = (port_return_daily - risk_free) / port_std_daily
-        sharpe_annual = sharpe_daily * np.sqrt(365)
+        sharpe_annual = sharpe_daily * np.sqrt(252)
     else:
         sharpe_annual = 0.0
 
     return {
         "strategy": strategy,
         "weights": weights_resp,
-        "portfolio_return_pct": float(port_return_daily * 365 * 100),
-        "portfolio_std_pct": float(port_std_daily * np.sqrt(365) * 100),
+        "portfolio_return_pct": float(port_return_daily * 252 * 100),
+        "portfolio_std_pct": float(port_std_daily * np.sqrt(252) * 100),
         "sharpe_ratio": float(sharpe_annual),
     }
 
