@@ -16,6 +16,8 @@ class TestConfig:
         assert cfg.risk_free_annual_perc == 5.0
         assert cfg.w_limits == (0.02, 0.12)
         assert cfg.w_limits_per_ticker == {}
+        assert cfg.strategy == "sharpe"
+        assert cfg.kelly_fraction == 0.5
 
     def test_risk_free_computation(self):
         cfg = Config()
@@ -76,3 +78,48 @@ class TestConfig:
     def test_from_dict_invalid_global_limits(self):
         cfg = Config.from_dict({"w_limits": "0.05"})
         assert cfg.w_limits == (0.02, 0.12)
+
+
+class TestStrategyResolution:
+    def test_resolve_defaults_to_sharpe(self):
+        assert Config().resolve_strategy() == "sharpe"
+
+    def test_resolve_min_variance_flag(self):
+        assert Config(min_variance=True).resolve_strategy() == "min_variance"
+
+    def test_resolve_strategy_field(self):
+        assert Config(strategy="kelly").resolve_strategy() == "kelly"
+        assert Config(strategy="min_variance").resolve_strategy() == "min_variance"
+
+    def test_resolve_strategy_overrides_flag(self):
+        assert Config(min_variance=True, strategy="kelly").resolve_strategy() == "kelly"
+
+    def test_resolve_unknown_strategy_falls_back(self):
+        assert Config(strategy="bogus").resolve_strategy() == "sharpe"
+
+    def test_from_dict_kelly(self):
+        data = {
+            "shares": "AAPL,GOOG",
+            "strategy": "kelly",
+            "kelly_fraction": "0.25",
+        }
+        cfg = Config.from_dict(data)
+        assert cfg.strategy == "kelly"
+        assert cfg.kelly_fraction == pytest.approx(0.25)
+        assert cfg.resolve_strategy() == "kelly"
+
+    def test_from_dict_kelly_fraction_clamped(self):
+        assert Config.from_dict({"strategy": "kelly", "kelly_fraction": "5"}).kelly_fraction == 1.0
+        assert Config.from_dict({"strategy": "kelly", "kelly_fraction": "abc"}).kelly_fraction == 0.5
+        assert Config.from_dict({}).kelly_fraction == 0.5
+
+    def test_from_dict_legacy_min_variance_maps_to_strategy(self):
+        cfg = Config.from_dict({"min_variance": "on"})
+        assert cfg.min_variance is True
+        assert cfg.strategy == "min_variance"
+        assert cfg.resolve_strategy() == "min_variance"
+
+    def test_from_dict_invalid_strategy_ignored(self):
+        cfg = Config.from_dict({"strategy": "quantum"})
+        assert cfg.strategy == "sharpe"
+        assert cfg.resolve_strategy() == "sharpe"

@@ -33,12 +33,16 @@ def build_optimization_result(
     else:
         sharpe_annual = 0.0
 
+    daily_log_growth = port_return_daily - 0.5 * port_std_daily ** 2
+    growth_rate_pct = float((np.exp(daily_log_growth * 252) - 1.0) * 100.0)
+
     return {
         "strategy": strategy,
         "weights": weights_resp,
         "portfolio_return_pct": float(port_return_daily * 252 * 100),
         "portfolio_std_pct": float(port_std_daily * np.sqrt(252) * 100),
         "sharpe_ratio": float(sharpe_annual),
+        "growth_rate_pct": growth_rate_pct,
     }
 
 

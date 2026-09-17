@@ -39,6 +39,14 @@ class TestRunPipeline:
         result = pipeline.run_pipeline(cfg)
         assert "Minimal Variance" in result["strategy"]
 
+    def test_kelly_growth_strategy(self, mock_data):
+        cfg = Config(shares=["AAA", "BBB"], w_limits=(0.02, 0.9), strategy="kelly", kelly_fraction=0.5, monthly_delta=0.0)
+        result = pipeline.run_pipeline(cfg)
+        assert "Growth" in result["strategy"]
+        assert "Kelly" in result["strategy"]
+        assert abs(sum(result["weights"]) - 1.0) < 1e-6
+        assert result["mean"] > 0
+
     def test_per_ticker_bounds_applied(self, mock_data):
         cfg = Config(
             shares=["AAA", "BBB"],

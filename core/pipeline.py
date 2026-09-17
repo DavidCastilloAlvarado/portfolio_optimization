@@ -24,7 +24,8 @@ def run_pipeline(cfg: Config) -> dict:
 
     weights, port_mean_val, port_std, strategy = optimize(
         mean_returns.copy(), cov_returns.copy(),
-        cfg.risk_free, build_asset_bounds(names, cfg), cfg.min_variance,
+        cfg.risk_free, build_asset_bounds(names, cfg),
+        strategy=cfg.resolve_strategy(), kelly_fraction=cfg.kelly_fraction,
     )
 
     result = {

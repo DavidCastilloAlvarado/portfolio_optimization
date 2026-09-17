@@ -25,7 +25,8 @@ themeToggle.addEventListener('click', () => {
 // ── Reset form ─────────────────────────────────────────────────────
 document.getElementById('btn-reset').addEventListener('click', () => {
     form.reset();
-    syncMinVarianceWarning();
+    syncStrategyUI();
+    syncKellyFraction();
     resultsDiv.classList.remove('visible');
     jsonBlock.classList.remove('visible');
     copyBtn.style.display = 'none';
@@ -46,14 +47,34 @@ document.querySelectorAll('.collapse-header').forEach(header => {
     });
 });
 
-// ── Min-variance risk-free warning ─────────────────────────────────
-const minVarianceCheckbox = document.getElementById('min_variance');
+// ── Strategy selection ───────────────────────────────────────────────
+const strategyRadios = document.querySelectorAll('input[name="strategy"]');
+const kellyRow = document.getElementById('kelly-row');
+const kellyRange = document.getElementById('kelly_fraction_range');
+const kellyHidden = document.getElementById('kelly_fraction');
+const kellyFracValue = document.getElementById('kelly-frac-value');
 const minVarianceWarning = document.getElementById('min-variance-warning');
-function syncMinVarianceWarning() {
-    minVarianceWarning.classList.toggle('visible', minVarianceCheckbox.checked);
+const kellyWarning = document.getElementById('kelly-warning');
+
+function selectedStrategy() {
+    const checked = document.querySelector('input[name="strategy"]:checked');
+    return checked ? checked.value : 'sharpe';
 }
-minVarianceCheckbox.addEventListener('change', syncMinVarianceWarning);
-syncMinVarianceWarning();
+function syncStrategyUI() {
+    const s = selectedStrategy();
+    kellyRow.hidden = s !== 'kelly';
+    minVarianceWarning.classList.toggle('visible', s === 'min_variance');
+    kellyWarning.classList.toggle('visible', s === 'kelly');
+}
+function syncKellyFraction() {
+    const pct = parseInt(kellyRange.value, 10);
+    kellyHidden.value = (pct / 100).toString();
+    kellyFracValue.textContent = pct + '%';
+}
+strategyRadios.forEach(r => r.addEventListener('change', syncStrategyUI));
+kellyRange.addEventListener('input', syncKellyFraction);
+syncStrategyUI();
+syncKellyFraction();
 
 // ── Per-ticker weight limits ───────────────────────────────────────
 const sharesInput = document.getElementById('shares');
@@ -236,9 +257,8 @@ form.addEventListener('submit', async (e) => {
     spinner.classList.add('visible');
 
     syncPerTickerPayload();
+    syncKellyFraction();
     const fd = new FormData(form);
-    const mv = fd.get('min_variance');
-    if (!mv) fd.delete('min_variance');
 
     try {
         spinnerText.textContent = 'Fetching market data...';
@@ -301,10 +321,12 @@ function renderResults(data) {
     const statsDiv = document.getElementById('portfolio-stats');
     statsDiv.innerHTML = '';
     const retPct = data.portfolio_return_pct || 0;
+    const growthPct = data.growth_rate_pct || 0;
     const stats = [
         { label: 'Expected Return (annualized)', value: retPct.toFixed(2) + '%', cls: retPct >= 0 ? 'positive' : 'negative', sub: 'Daily mean * 365' },
         { label: 'Std Deviation (annualized)', value: (data.portfolio_std_pct || 0).toFixed(2) + '%', cls: 'accent', sub: 'Daily std * sqrt(365)' },
         { label: 'Sharpe Ratio', value: (data.sharpe_ratio || 0).toFixed(4), cls: 'warning', sub: '(Return - RF) / StdDev' },
+        { label: 'Growth Rate (geometric)', value: growthPct.toFixed(2) + '%', cls: growthPct >= 0 ? 'positive' : 'negative', sub: 'Expected long-run compound rate' },
     ];
     for (const s of stats) {
         const card = document.createElement('div');

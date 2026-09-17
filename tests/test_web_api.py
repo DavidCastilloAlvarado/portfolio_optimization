@@ -100,6 +100,26 @@ def test_optimize_min_variance_with_per_ticker(client, mock_data):
     assert 60.0 - 1e-4 <= weights["AAA"] <= 90.0 + 1e-4
 
 
+def test_optimize_kelly_growth(client, mock_data):
+    res = client.post(
+        "/optimize",
+        data={
+            "shares": "AAA,BBB",
+            "w_limits": "0.02,0.9",
+            "strategy": "kelly",
+            "kelly_fraction": "0.5",
+            "monthly_delta": "0",
+        },
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert "Growth" in data["strategy"]
+    assert "Kelly" in data["strategy"]
+    assert [w["ticker"] for w in data["weights"]] == ["AAA", "BBB"]
+    assert abs(sum(w["weight_pct"] for w in data["weights"]) - 100.0) < 1e-6
+    assert "growth_rate_pct" in data
+
+
 def test_optimize_error_returns_400(client, mock_data, monkeypatch):
     def boom(shares, days):
         raise ValueError("No price data returned for ticker 'AAA'")

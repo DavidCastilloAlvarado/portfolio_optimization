@@ -31,7 +31,7 @@ __CSS__
     </div>
 
     <h1>Portfolio Optimizer</h1>
-    <p class="subtitle">// Modern Portfolio Theory &mdash; Mean-Variance &amp; Minimal Variance</p>
+    <p class="subtitle">// Modern Portfolio Theory &mdash; Mean-Variance &middot; Minimal Variance &middot; Growth (Kelly)</p>
 
     <form id="optimizer-form">
 
@@ -102,14 +102,45 @@ __CSS__
                     <div class="per-ticker-rows" id="per-ticker-rows"></div>
                 </div>
                 <input type="hidden" id="w_limits_per_ticker" name="w_limits_per_ticker" value="">
-                <div class="toggle-row">
-                    <input type="checkbox" id="min_variance" name="min_variance" value="on">
-                    <label for="min_variance">Minimal Variance</label>
-                    <span class="hint">Minimizes risk instead of maximizing Sharpe ratio</span>
+                <div class="form-group full">
+                    <label>Optimization Strategy</label>
+                    <div class="strategy-options" id="strategy-options">
+                        <label class="strategy-option">
+                            <input type="radio" name="strategy" value="sharpe" id="strategy-sharpe" checked>
+                            <span class="strategy-name">Mean-Variance (Sharpe)</span>
+                            <span class="strategy-desc">Maximizes the Sharpe ratio &mdash; best return per unit of risk.</span>
+                        </label>
+                        <label class="strategy-option">
+                            <input type="radio" name="strategy" value="min_variance" id="strategy-min_variance">
+                            <span class="strategy-name">Minimal Variance</span>
+                            <span class="strategy-desc">Minimizes portfolio volatility (pure risk reduction).</span>
+                        </label>
+                        <label class="strategy-option">
+                            <input type="radio" name="strategy" value="kelly" id="strategy-kelly">
+                            <span class="strategy-name">Growth (Kelly)</span>
+                            <span class="strategy-desc">Maximizes the long-term geometric growth rate of wealth.</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="kelly-row" id="kelly-row" hidden>
+                    <div class="kelly-controls">
+                        <label for="kelly_fraction_range">Kelly Fraction <span class="kelly-frac-value" id="kelly-frac-value">50%</span></label>
+                        <input type="range" id="kelly_fraction_range" name="kelly_fraction_range" min="10" max="100" step="5" value="50">
+                        <input type="hidden" id="kelly_fraction" name="kelly_fraction" value="0.5">
+                        <div class="kelly-scale"><span>Conservative</span><span>Recommended</span><span>Full Kelly</span></div>
+                    </div>
+                    <div class="kelly-desc">
+                        <span class="kelly-desc-title">Growth (Kelly) strategy</span>
+                        <span>The growth-optimal (Kelly) portfolio maximizes the expected log of wealth, which equals the long-run compound growth rate. A smaller fraction is more conservative; full Kelly (100%) is aggressive and amplifies estimation error.</span>
+                    </div>
                 </div>
                 <div class="min-variance-warning" id="min-variance-warning">
                     <span class="mvw-icon">&#x26A0;&#xFE0F;</span>
                     <span>With Minimal Variance, the Risk-Free Rate does not change the weights &mdash; it only affects the displayed Sharpe ratio.</span>
+                </div>
+                <div class="min-variance-warning" id="kelly-warning">
+                    <span class="mvw-icon">&#x26A0;&#xFE0F;</span>
+                    <span>Growth (Kelly) maximizes geometric growth; the Risk-Free Rate does not change the weights. Full Kelly is aggressive &mdash; half-Kelly (50%) is the recommended practical default.</span>
                 </div>
             </div>
         </div>

@@ -33,7 +33,9 @@ class Config:
     w_limits_per_ticker: dict = field(default_factory=dict)  # ticker -> (min, max); None side falls back to global
 
     # ── Optimization ─────────────────────────────────────────────────
-    min_variance: bool = False  # True = Min-Variance, False = Max Sharpe
+    min_variance: bool = False  # Legacy flag; strategy takes precedence when set (kept for backward compatibility)
+    strategy: str = "sharpe"  # "sharpe" | "min_variance" | "kelly"
+    kelly_fraction: float = 0.5  # Kelly aggressiveness λ: 1.0 = full Kelly, 0.5 = half-Kelly (recommended)
 
     # ── Investment ────────────────────────────────────────────────────
     monto_usd: float = 10000.0
@@ -54,6 +56,20 @@ class Config:
         if self.resample == "none":
             return None
         return self.resample
+
+    def resolve_strategy(self) -> str:
+        """Return the canonical strategy to run.
+
+        `strategy` takes precedence; the legacy `min_variance` flag is honored as a
+        fallback so old callers/UIs keep working.
+        """
+        if self.strategy == "kelly":
+            return "kelly"
+        if self.strategy == "min_variance":
+            return "min_variance"
+        if self.min_variance:
+            return "min_variance"
+        return "sharpe"
 
     @classmethod
     def from_dict(cls, data: dict) -> "Config":
@@ -85,12 +101,29 @@ class Config:
                 hi = _parse_limit_side(vals[1]) if len(vals) > 1 else None
                 w_limits_per_ticker[ticker] = (lo, hi)
 
+        min_variance = data.get("min_variance", False) in (True, "true", "on", 1)
+
+        strategy = str(data.get("strategy", "sharpe")).strip().lower()
+        if strategy not in ("sharpe", "min_variance", "kelly"):
+            strategy = "sharpe"
+        if min_variance and strategy == "sharpe":
+            strategy = "min_variance"
+
+        kelly_raw = data.get("kelly_fraction", "")
+        try:
+            kelly_fraction = float(kelly_raw) if kelly_raw not in (None, "") else 0.5
+        except (TypeError, ValueError):
+            kelly_fraction = 0.5
+        kelly_fraction = min(max(kelly_fraction, 0.01), 1.0)
+
         return cls(
             resample=data.get("resample", "none"),
             days=int(data.get("days", 720)),
             shares=shares,
             w_limits=w_limits,
-            min_variance=data.get("min_variance", False) in (True, "true", "on", 1),
+            min_variance=min_variance,
+            strategy=strategy,
+            kelly_fraction=kelly_fraction,
             w_limits_per_ticker=w_limits_per_ticker,
             monto_usd=float(data.get("monto_usd", 10000)),
             monthly_delta=float(data.get("monthly_delta", 300)),
