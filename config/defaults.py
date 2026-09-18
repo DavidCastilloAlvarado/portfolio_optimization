@@ -15,6 +15,24 @@ def _parse_limit_side(s: str):
         return None
 
 
+def _parse_int(raw, default: int, lo: int, hi: int) -> int:
+    """Parse an int from form data; empty/invalid -> default, clamped to [lo, hi]."""
+    try:
+        val = int(raw) if raw not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+    return min(max(val, lo), hi)
+
+
+def _parse_float(raw, default: float, lo: float, hi: float) -> float:
+    """Parse a float from form data; empty/invalid -> default, clamped to [lo, hi]."""
+    try:
+        val = float(raw) if raw not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+    return min(max(val, lo), hi)
+
+
 @dataclass
 class Config:
     """All tunable parameters for the portfolio optimization pipeline."""
@@ -34,8 +52,13 @@ class Config:
 
     # ── Optimization ─────────────────────────────────────────────────
     min_variance: bool = False  # Legacy flag; strategy takes precedence when set (kept for backward compatibility)
-    strategy: str = "sharpe"  # "sharpe" | "min_variance" | "kelly"
+    strategy: str = "sharpe"  # "sharpe" | "min_variance" | "kelly" | "llm_bl"
     kelly_fraction: float = 0.5  # Kelly aggressiveness λ: 1.0 = full Kelly, 0.5 = half-Kelly (recommended)
+    llm_samples: int = 5  # LLM samples per asset for Black-Litterman view confidence
+    llm_tau: float = 1.0 / 26.0  # Black-Litterman τ: scales prior covariance (1/26 ≈ biweekly rebalance)
+    blm_prior: str = "equal"  # "equal" | "inverse_vol": equilibrium prior weights
+    blm_horizon_days: int = 14  # Forecast horizon in trading days for LLM views
+    blm_history_days: int = 56  # History window (trading days) given to the LLM
 
     # ── Investment ────────────────────────────────────────────────────
     monto_usd: float = 10000.0
@@ -63,6 +86,8 @@ class Config:
         `strategy` takes precedence; the legacy `min_variance` flag is honored as a
         fallback so old callers/UIs keep working.
         """
+        if self.strategy == "llm_bl":
+            return "llm_bl"
         if self.strategy == "kelly":
             return "kelly"
         if self.strategy == "min_variance":
@@ -104,7 +129,7 @@ class Config:
         min_variance = data.get("min_variance", False) in (True, "true", "on", 1)
 
         strategy = str(data.get("strategy", "sharpe")).strip().lower()
-        if strategy not in ("sharpe", "min_variance", "kelly"):
+        if strategy not in ("sharpe", "min_variance", "kelly", "llm_bl"):
             strategy = "sharpe"
         if min_variance and strategy == "sharpe":
             strategy = "min_variance"
@@ -116,6 +141,16 @@ class Config:
             kelly_fraction = 0.5
         kelly_fraction = min(max(kelly_fraction, 0.01), 1.0)
 
+        llm_samples = _parse_int(data.get("llm_samples", ""), 5, 1, 50)
+        llm_tau = _parse_float(data.get("llm_tau", ""), 1.0 / 26.0, 1e-6, 1.0)
+
+        blm_prior = str(data.get("blm_prior", "equal")).strip().lower()
+        if blm_prior not in ("equal", "inverse_vol"):
+            blm_prior = "equal"
+
+        blm_horizon_days = _parse_int(data.get("blm_horizon_days", ""), 14, 1, 252)
+        blm_history_days = _parse_int(data.get("blm_history_days", ""), 56, 5, 504)
+
         return cls(
             resample=data.get("resample", "none"),
             days=int(data.get("days", 720)),
@@ -124,6 +159,11 @@ class Config:
             min_variance=min_variance,
             strategy=strategy,
             kelly_fraction=kelly_fraction,
+            llm_samples=llm_samples,
+            llm_tau=llm_tau,
+            blm_prior=blm_prior,
+            blm_horizon_days=blm_horizon_days,
+            blm_history_days=blm_history_days,
             w_limits_per_ticker=w_limits_per_ticker,
             monto_usd=float(data.get("monto_usd", 10000)),
             monthly_delta=float(data.get("monthly_delta", 300)),

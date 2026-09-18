@@ -53,8 +53,10 @@ const kellyRow = document.getElementById('kelly-row');
 const kellyRange = document.getElementById('kelly_fraction_range');
 const kellyHidden = document.getElementById('kelly_fraction');
 const kellyFracValue = document.getElementById('kelly-frac-value');
+const llmRow = document.getElementById('llm-row');
 const minVarianceWarning = document.getElementById('min-variance-warning');
 const kellyWarning = document.getElementById('kelly-warning');
+const llmWarning = document.getElementById('llm-warning');
 
 function selectedStrategy() {
     const checked = document.querySelector('input[name="strategy"]:checked');
@@ -63,8 +65,10 @@ function selectedStrategy() {
 function syncStrategyUI() {
     const s = selectedStrategy();
     kellyRow.hidden = s !== 'kelly';
+    llmRow.hidden = s !== 'llm_bl';
     minVarianceWarning.classList.toggle('visible', s === 'min_variance');
     kellyWarning.classList.toggle('visible', s === 'kelly');
+    llmWarning.classList.toggle('visible', s === 'llm_bl');
 }
 function syncKellyFraction() {
     const pct = parseInt(kellyRange.value, 10);
@@ -407,6 +411,39 @@ function renderResults(data) {
         }
     } else {
         btSection.style.display = 'none';
+    }
+
+    // LLM views (Black-Litterman)
+    const llmSection = document.getElementById('llm-views-section');
+    const llmNote = document.getElementById('llm-views-note');
+    const llmBody = document.getElementById('llm-views-body');
+    llmBody.innerHTML = '';
+    if (data.llm_views) {
+        const lv = data.llm_views;
+        llmSection.style.display = 'block';
+        const flags = [
+            lv.model,
+            lv.horizon_days + '-day horizon',
+            lv.samples_per_asset + ' samples/asset',
+            lv.from_cache ? "views from today's cache" : 'views freshly queried',
+        ];
+        let noteHtml = flags.join(' &middot; ');
+        if (lv.degraded) {
+            noteHtml += ' &mdash; <span class="llm-warn">LLM views unavailable, using pure equilibrium prior</span>';
+        }
+        llmNote.innerHTML = noteHtml;
+        for (const a of lv.assets) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ticker">${assetLabel(a.ticker)}</td>
+                <td class="pct">${a.predicted_daily_return_pct >= 0 ? '+' : ''}${a.predicted_daily_return_pct.toFixed(4)}%</td>
+                <td class="pct">${a.view_std_pct.toFixed(4)}%</td>
+                <td class="usd">${a.samples_ok}</td>
+            `;
+            llmBody.appendChild(tr);
+        }
+    } else {
+        llmSection.style.display = 'none';
     }
 
     // JSON with syntax highlighting

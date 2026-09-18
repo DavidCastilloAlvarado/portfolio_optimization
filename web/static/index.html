@@ -120,6 +120,11 @@ __CSS__
                             <span class="strategy-name">Growth (Kelly)</span>
                             <span class="strategy-desc">Maximizes the long-term geometric growth rate of wealth.</span>
                         </label>
+                        <label class="strategy-option">
+                            <input type="radio" name="strategy" value="llm_bl" id="strategy-llm_bl">
+                            <span class="strategy-name">Black-Litterman (LLM)</span>
+                            <span class="strategy-desc">LLM return forecasts + uncertainty, blended with market equilibrium (Bayesian).</span>
+                        </label>
                     </div>
                 </div>
                 <div class="kelly-row" id="kelly-row" hidden>
@@ -134,6 +139,37 @@ __CSS__
                         <span>The growth-optimal (Kelly) portfolio maximizes the expected log of wealth, which equals the long-run compound growth rate. A smaller fraction is more conservative; full Kelly (100%) is aggressive and amplifies estimation error.</span>
                     </div>
                 </div>
+                <div class="llm-row" id="llm-row" hidden>
+                    <div class="llm-controls">
+                        <div class="form-row" style="margin-bottom:0;">
+                            <div class="form-group">
+                                <label for="llm_samples">LLM Samples / Asset</label>
+                                <input type="number" id="llm_samples" name="llm_samples" value="5" min="1" max="50">
+                            </div>
+                            <div class="form-group">
+                                <label for="llm_tau">Confidence (&tau;)</label>
+                                <input type="number" id="llm_tau" name="llm_tau" value="0.0385" step="0.0005" min="0.0001" max="1">
+                            </div>
+                        </div>
+                        <div class="form-row" style="margin-top:10px; margin-bottom:0;">
+                            <div class="form-group">
+                                <label for="blm_prior">Equilibrium Prior</label>
+                                <select id="blm_prior" name="blm_prior">
+                                    <option value="equal" selected>Equal weights</option>
+                                    <option value="inverse_vol">Inverse volatility</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="blm_horizon_days">Forecast Horizon (days)</label>
+                                <input type="number" id="blm_horizon_days" name="blm_horizon_days" value="14" min="1" max="252">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kelly-desc">
+                        <span class="kelly-desc-title">Black-Litterman (LLM) strategy</span>
+                        <span>The LLM (OpenAI-compatible endpoint via LLM_BASE_URL / LLM_MODEL env vars) forecasts each asset&rsquo;s next-period return several times (LLM Samples / Asset); the sample mean becomes the view and the sample variance its confidence. Views blend with a market-equilibrium prior and are cached per day. If the LLM is unreachable, the run degrades to the pure equilibrium prior.</span>
+                    </div>
+                </div>
                 <div class="min-variance-warning" id="min-variance-warning">
                     <span class="mvw-icon">&#x26A0;&#xFE0F;</span>
                     <span>With Minimal Variance, the Risk-Free Rate does not change the weights &mdash; it only affects the displayed Sharpe ratio.</span>
@@ -141,6 +177,10 @@ __CSS__
                 <div class="min-variance-warning" id="kelly-warning">
                     <span class="mvw-icon">&#x26A0;&#xFE0F;</span>
                     <span>Growth (Kelly) maximizes geometric growth; the Risk-Free Rate does not change the weights. Full Kelly is aggressive &mdash; half-Kelly (50%) is the recommended practical default.</span>
+                </div>
+                <div class="min-variance-warning" id="llm-warning">
+                    <span class="mvw-icon">&#x26A0;&#xFE0F;</span>
+                    <span>Black-Litterman (LLM) calls the configured LLM once per sample per asset &mdash; expect a short wait and possible API cost. The Risk-Free Rate is still used by the final optimizer, not by the LLM views.</span>
                 </div>
             </div>
         </div>
@@ -213,6 +253,23 @@ __CSS__
         <div id="backtest-section" style="display:none; margin-top:32px; padding-top:24px; border-top:1px solid #3c3c3c;">
             <div style="font-size:16px; font-weight:400; color:#dcdcaa; margin-bottom:16px;">&#x1F4CA; Backtest Results</div>
             <div class="results-grid" id="backtest-stats"></div>
+        </div>
+
+        <!-- LLM Views (Black-Litterman) -->
+        <div id="llm-views-section" style="display:none; margin-top:32px; padding-top:24px; border-top:1px solid #3c3c3c;">
+            <div style="font-size:16px; font-weight:400; color:#dcdcaa; margin-bottom:8px;">&#x1F916; LLM Views (Black-Litterman)</div>
+            <div class="llm-views-note" id="llm-views-note"></div>
+            <table class="weights-table">
+                <thead>
+                    <tr>
+                        <th>Ticker</th>
+                        <th>Predicted Daily Return</th>
+                        <th class="pct">View Std</th>
+                        <th class="usd">Samples</th>
+                    </tr>
+                </thead>
+                <tbody id="llm-views-body"></tbody>
+            </table>
         </div>
 
         <div class="btn-group">

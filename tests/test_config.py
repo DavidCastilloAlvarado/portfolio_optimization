@@ -18,6 +18,11 @@ class TestConfig:
         assert cfg.w_limits_per_ticker == {}
         assert cfg.strategy == "sharpe"
         assert cfg.kelly_fraction == 0.5
+        assert cfg.llm_samples == 5
+        assert cfg.llm_tau == pytest.approx(1.0 / 26.0)
+        assert cfg.blm_prior == "equal"
+        assert cfg.blm_horizon_days == 14
+        assert cfg.blm_history_days == 56
 
     def test_risk_free_computation(self):
         cfg = Config()
@@ -123,3 +128,31 @@ class TestStrategyResolution:
         cfg = Config.from_dict({"strategy": "quantum"})
         assert cfg.strategy == "sharpe"
         assert cfg.resolve_strategy() == "sharpe"
+
+    def test_resolve_llm_bl(self):
+        assert Config(strategy="llm_bl").resolve_strategy() == "llm_bl"
+
+    def test_from_dict_llm_bl(self):
+        data = {
+            "strategy": "llm_bl",
+            "llm_samples": "10",
+            "llm_tau": "0.05",
+            "blm_prior": "inverse_vol",
+            "blm_horizon_days": "7",
+            "blm_history_days": "120",
+        }
+        cfg = Config.from_dict(data)
+        assert cfg.strategy == "llm_bl"
+        assert cfg.llm_samples == 10
+        assert cfg.llm_tau == pytest.approx(0.05)
+        assert cfg.blm_prior == "inverse_vol"
+        assert cfg.blm_horizon_days == 7
+        assert cfg.blm_history_days == 120
+
+    def test_from_dict_llm_clamped(self):
+        cfg = Config.from_dict({"strategy": "llm_bl", "llm_samples": "9999", "llm_tau": "5",
+                                "blm_horizon_days": "0", "blm_prior": "bogus"})
+        assert cfg.llm_samples == 50
+        assert cfg.llm_tau == 1.0
+        assert cfg.blm_horizon_days == 1
+        assert cfg.blm_prior == "equal"

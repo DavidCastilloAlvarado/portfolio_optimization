@@ -120,6 +120,46 @@ def test_optimize_kelly_growth(client, mock_data):
     assert "growth_rate_pct" in data
 
 
+def test_optimize_llm_bl(client, mock_data, monkeypatch):
+    def fake_run_blm(returns, names, cov, cfg):
+        return {
+            "posterior_mean": np.array([0.0015, 0.0005]),
+            "prior_mean": np.array([0.0007, 0.0003]),
+            "views": {
+                "AAA": {"q": 0.0015, "omega": 1e-6, "samples": [0.0015], "n_ok": 1},
+            },
+            "view_names": ["AAA"],
+            "from_cache": True,
+            "degraded": False,
+            "model": "test-model",
+        }
+
+    monkeypatch.setattr(pipeline, "run_blm", fake_run_blm)
+    res = client.post(
+        "/optimize",
+        data={
+            "shares": "AAA,BBB",
+            "w_limits": "0.02,0.9",
+            "strategy": "llm_bl",
+            "llm_samples": "3",
+            "llm_tau": "0.05",
+            "blm_prior": "inverse_vol",
+            "blm_horizon_days": "7",
+            "monthly_delta": "0",
+        },
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert "Black-Litterman" in data["strategy"]
+    assert "LLM views" in data["strategy"]
+    lv = data["llm_views"]
+    assert lv["samples_per_asset"] == 3
+    assert lv["tau"] == pytest.approx(0.05)
+    assert lv["horizon_days"] == 7
+    assert lv["from_cache"] is True
+    assert [a["ticker"] for a in lv["assets"]] == ["AAA"]
+
+
 def test_optimize_error_returns_400(client, mock_data, monkeypatch):
     def boom(shares, days):
         raise ValueError("No price data returned for ticker 'AAA'")

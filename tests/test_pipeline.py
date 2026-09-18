@@ -47,6 +47,57 @@ class TestRunPipeline:
         assert abs(sum(result["weights"]) - 1.0) < 1e-6
         assert result["mean"] > 0
 
+    def test_llm_bl_strategy(self, mock_data, monkeypatch):
+        def fake_run_blm(returns, names, cov, cfg):
+            assert list(names) == ["AAA", "BBB"]
+            return {
+                "posterior_mean": np.array([0.0015, 0.0005]),
+                "prior_mean": np.array([0.0007, 0.0003]),
+                "views": {
+                    "AAA": {"q": 0.0015, "omega": 1e-6, "samples": [0.0015, 0.0015], "n_ok": 2},
+                    "BBB": {"q": 0.0005, "omega": 1e-6, "samples": [0.0005], "n_ok": 1},
+                },
+                "view_names": ["AAA", "BBB"],
+                "from_cache": False,
+                "degraded": False,
+                "model": "test-model",
+            }
+
+        monkeypatch.setattr(pipeline, "run_blm", fake_run_blm)
+        cfg = Config(shares=["AAA", "BBB"], w_limits=(0.02, 0.9), strategy="llm_bl",
+                     llm_samples=3, monthly_delta=0.0)
+        result = pipeline.run_pipeline(cfg)
+        assert "Black-Litterman" in result["strategy"]
+        assert "LLM views" in result["strategy"]
+        assert abs(sum(result["weights"]) - 1.0) < 1e-6
+        lv = result["llm_views"]
+        assert lv["model"] == "test-model"
+        assert lv["samples_per_asset"] == 3
+        assert [a["ticker"] for a in lv["assets"]] == ["AAA", "BBB"]
+        assert lv["assets"][0]["predicted_daily_return_pct"] == pytest.approx(0.15)
+        assert all(a["samples_ok"] >= 1 for a in lv["assets"])
+
+    def test_llm_bl_degraded_strategy(self, mock_data, monkeypatch):
+        def fake_run_blm(returns, names, cov, cfg):
+            prior = np.array([0.0007, 0.0003])
+            return {
+                "posterior_mean": prior,
+                "prior_mean": prior,
+                "views": {},
+                "view_names": [],
+                "from_cache": False,
+                "degraded": True,
+                "model": "test-model",
+            }
+
+        monkeypatch.setattr(pipeline, "run_blm", fake_run_blm)
+        cfg = Config(shares=["AAA", "BBB"], w_limits=(0.02, 0.9), strategy="llm_bl", monthly_delta=0.0)
+        result = pipeline.run_pipeline(cfg)
+        assert "Black-Litterman" in result["strategy"]
+        assert "equilibrium fallback" in result["strategy"]
+        assert result["llm_views"]["degraded"] is True
+        assert result["llm_views"]["assets"] == []
+
     def test_per_ticker_bounds_applied(self, mock_data):
         cfg = Config(
             shares=["AAA", "BBB"],

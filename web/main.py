@@ -39,6 +39,11 @@ async def optimize_endpoint(
     min_variance: str = Form("off"),
     strategy: str = Form("sharpe"),
     kelly_fraction: str = Form("0.5"),
+    llm_samples: str = Form("5"),
+    llm_tau: str = Form("0.0385"),
+    blm_prior: str = Form("equal"),
+    blm_horizon_days: str = Form("14"),
+    blm_history_days: str = Form("56"),
     monto_usd: str = Form("10000"),
     monthly_delta: str = Form("300"),
     sim_days: str = Form("252"),
@@ -55,6 +60,11 @@ async def optimize_endpoint(
             "min_variance": min_variance,
             "strategy": strategy,
             "kelly_fraction": kelly_fraction,
+            "llm_samples": llm_samples,
+            "llm_tau": llm_tau,
+            "blm_prior": blm_prior,
+            "blm_horizon_days": blm_horizon_days,
+            "blm_history_days": blm_history_days,
             "monto_usd": monto_usd,
             "monthly_delta": monthly_delta,
             "sim_days": sim_days,
@@ -72,6 +82,8 @@ async def optimize_endpoint(
         backtest = build_backtest_result(result.get("backtest"))
         if backtest:
             optimization["backtest"] = backtest
+        if result.get("llm_views"):
+            optimization["llm_views"] = result["llm_views"]
 
         return optimization
 
