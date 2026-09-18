@@ -92,11 +92,12 @@ class TestLLMSettings:
         assert s.timeout == 33.0
         assert s.is_configured
 
-    def test_from_env_defaults(self, monkeypatch):
+    def test_from_env_missing_is_unconfigured(self, monkeypatch):
         for var in ("LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL", "LLM_TIMEOUT"):
             monkeypatch.delenv(var, raising=False)
         s = LLMSettings.from_env()
-        assert s.base_url == "http://192.168.18.200:1234/v1"
-        assert s.model == "Qwen3.8_mtp-27B"
+        assert s.base_url == ""
+        assert s.model == ""
         assert s.api_key == ""
-        assert s.is_configured
+        assert s.timeout == 120.0
+        assert not s.is_configured

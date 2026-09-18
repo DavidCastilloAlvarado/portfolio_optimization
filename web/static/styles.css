@@ -606,6 +606,16 @@ input[type="number"]::-webkit-outer-spin-button {
 .llm-views-note .llm-warn {
     color: var(--yellow);
 }
+.llm-rationale {
+    font-size: 11px;
+    color: var(--text);
+    line-height: 1.5;
+    max-width: 420px;
+    vertical-align: top;
+}
+.muted {
+    color: var(--text-muted);
+}
 
 /* ── Buttons ─────────────────────────────────────────────────────── */
 .btn-run {

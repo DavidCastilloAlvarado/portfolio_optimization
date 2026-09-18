@@ -15,6 +15,21 @@ def _asset_bounds(w_limits, n: int) -> list:
     return [tuple(w_limits)] * n
 
 
+def _assert_bounds_feasible(bounds: list) -> None:
+    """Weights must sum to 1: the bounds must leave a non-empty feasible set."""
+    lo = sum(b[0] for b in bounds)
+    hi = sum(b[1] for b in bounds)
+    if hi < 1.0 - 1e-9:
+        raise ValueError(
+            f"weight bounds infeasible: with {len(bounds)} assets the max weights sum to "
+            f"{hi:.2f} < 1.0 — raise the max weight or add more tickers"
+        )
+    if lo > 1.0 + 1e-9:
+        raise ValueError(
+            f"weight bounds infeasible: the min weights sum to {lo:.2f} > 1.0 — lower the min weight"
+        )
+
+
 def solve_mean_variance(
     mean_returns: np.ndarray,
     cov_returns: np.ndarray,
@@ -159,6 +174,7 @@ def optimize(
         (weights, mean, std, strategy_name)
     """
     n = len(mean_returns)
+    _assert_bounds_feasible(_asset_bounds(w_limits, n))
 
     if strategy == "kelly":
         weights = solve_kelly_growth(mean_returns, cov_returns, kelly_fraction, w_limits)

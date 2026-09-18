@@ -145,3 +145,16 @@ class TestOptimize:
         assert port_mean_val == pytest.approx(expected_mean)
         expected_std = np.sqrt(float(np.dot(np.dot(weights, two_cov), weights)))
         assert port_std == pytest.approx(expected_std)
+
+    def test_infeasible_max_bounds_raise(self, two_mean, two_cov):
+        """Few assets with tight max weights leave an empty feasible set."""
+        with pytest.raises(ValueError, match="max weights sum"):
+            optimize(two_mean, two_cov, 0.0001, (0.02, 0.12), min_variance=False)
+
+    def test_infeasible_min_bounds_raise(self, two_mean, two_cov):
+        with pytest.raises(ValueError, match="min weights sum"):
+            optimize(two_mean, two_cov, 0.0001, (0.6, 0.9), min_variance=True)
+
+    def test_infeasible_per_asset_bounds_raise(self, two_mean, two_cov):
+        with pytest.raises(ValueError, match="max weights sum"):
+            optimize(two_mean, two_cov, 0.0001, [(0.0, 0.5), (0.0, 0.4)], strategy="kelly")

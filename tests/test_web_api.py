@@ -145,6 +145,11 @@ def test_optimize_llm_bl(client, mock_data, monkeypatch):
             "llm_tau": "0.05",
             "blm_prior": "inverse_vol",
             "blm_horizon_days": "7",
+            "llm_view_engine": "agent",
+            "llm_reasoning_effort": "high",
+            "llm_agent_websearch": "off",
+            "llm_agent_max_tokens": "2048",
+            "llm_agent_recursion_limit": "60",
             "monthly_delta": "0",
         },
     )
@@ -157,6 +162,7 @@ def test_optimize_llm_bl(client, mock_data, monkeypatch):
     assert lv["tau"] == pytest.approx(0.05)
     assert lv["horizon_days"] == 7
     assert lv["from_cache"] is True
+    assert lv["view_engine"] == "direct"
     assert [a["ticker"] for a in lv["assets"]] == ["AAA"]
 
 

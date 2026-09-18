@@ -421,8 +421,10 @@ function renderResults(data) {
     if (data.llm_views) {
         const lv = data.llm_views;
         llmSection.style.display = 'block';
+        const engine = lv.view_engine === 'agent' ? 'research agent (web search)' : 'direct (history only)';
         const flags = [
             lv.model,
+            engine,
             lv.horizon_days + '-day horizon',
             lv.samples_per_asset + ' samples/asset',
             lv.from_cache ? "views from today's cache" : 'views freshly queried',
@@ -434,11 +436,22 @@ function renderResults(data) {
         llmNote.innerHTML = noteHtml;
         for (const a of lv.assets) {
             const tr = document.createElement('tr');
+            const rationale = a.rationale
+                ? `<div class="llm-rationale">${escapeHtml(a.rationale)}</div>`
+                : '<span class="muted">direct samples (history only)</span>';
+            const srcs = (a.sources || []);
+            const srcLinks = srcs.slice(0, 3).map(u =>
+                `<a href="${escapeHtml(u)}" target="_blank" rel="noopener">source</a>`).join(' ');
+            const srcCell = srcs.length
+                ? `${srcLinks}${srcs.length > 3 ? ` <span class="muted">+${srcs.length - 3} more</span>` : ''}`
+                : '<span class="muted">&mdash;</span>';
             tr.innerHTML = `
                 <td class="ticker">${assetLabel(a.ticker)}</td>
                 <td class="pct">${a.predicted_daily_return_pct >= 0 ? '+' : ''}${a.predicted_daily_return_pct.toFixed(4)}%</td>
                 <td class="pct">${a.view_std_pct.toFixed(4)}%</td>
                 <td class="usd">${a.samples_ok}</td>
+                <td class="pct">${rationale}</td>
+                <td class="usd">${srcCell}</td>
             `;
             llmBody.appendChild(tr);
         }

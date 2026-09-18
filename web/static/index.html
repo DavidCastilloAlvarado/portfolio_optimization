@@ -164,10 +164,29 @@ __CSS__
                                 <input type="number" id="blm_horizon_days" name="blm_horizon_days" value="14" min="1" max="252">
                             </div>
                         </div>
+                        <div class="form-row" style="margin-top:10px; margin-bottom:0;">
+                            <div class="form-group">
+                                <label for="llm_view_engine">View Engine</label>
+                                <select id="llm_view_engine" name="llm_view_engine">
+                                    <option value="agent" selected>Research agent (web search)</option>
+                                    <option value="direct">Direct (history only)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="llm_reasoning_effort">Reasoning Effort</label>
+                                <select id="llm_reasoning_effort" name="llm_reasoning_effort">
+                                    <option value="none">Off</option>
+                                    <option value="low">Low</option>
+                                    <option value="medium" selected>Medium</option>
+                                    <option value="high">High</option>
+                                    <option value="xhigh">Extra high</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
                     <div class="kelly-desc">
                         <span class="kelly-desc-title">Black-Litterman (LLM) strategy</span>
-                        <span>The LLM (OpenAI-compatible endpoint via LLM_BASE_URL / LLM_MODEL env vars) forecasts each asset&rsquo;s next-period return several times (LLM Samples / Asset); the sample mean becomes the view and the sample variance its confidence. Views blend with a market-equilibrium prior and are cached per day. If the LLM is unreachable, the run degrades to the pure equilibrium prior.</span>
+                        <span>The research agent (LLM via LLM_BASE_URL / LLM_MODEL env vars) studies each asset&rsquo;s news, analyst consensus and earnings through the local Chrome web-search MCP, reasons with the selected effort, and returns a forecast contract &mdash; per asset, LLM Samples / Asset times. The sample mean becomes the view, the sample variance its confidence; views blend with the market-equilibrium prior and are cached per day. Agent samples take a few minutes each &mdash; lower the sample count or use Direct mode for fast runs. If the LLM or the search server is unreachable, the run degrades gracefully.</span>
                     </div>
                 </div>
                 <div class="min-variance-warning" id="min-variance-warning">
@@ -266,6 +285,8 @@ __CSS__
                         <th>Predicted Daily Return</th>
                         <th class="pct">View Std</th>
                         <th class="usd">Samples</th>
+                        <th class="pct">Analyst Rationale</th>
+                        <th class="usd">Sources</th>
                     </tr>
                 </thead>
                 <tbody id="llm-views-body"></tbody>

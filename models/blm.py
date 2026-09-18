@@ -159,6 +159,9 @@ def _build_prompt(name: str, cfg: Config, history_pct: np.ndarray) -> list[dict]
 def _views_cache_path(names: list[str], model: str, cfg: Config) -> str:
     key_src = "|".join([
         model,
+        cfg.llm_view_engine,
+        cfg.llm_reasoning_effort,
+        str(cfg.llm_agent_websearch),
         str(cfg.llm_samples),
         str(cfg.llm_tau),
         str(cfg.blm_prior),
@@ -185,17 +188,20 @@ def _read_cached_views(path: str) -> dict | None:
 
 def _write_cached_views(path: str, model: str, views: dict) -> None:
     os.makedirs(price_cache.CACHE_DIR, exist_ok=True)
+    cached_views = {}
+    for name, v in views.items():
+        entry = {
+            "q": v["q"],
+            "omega": v["omega"],
+            "samples": v["samples"],
+            "n_ok": v["n_ok"],
+        }
+        if "details" in v:
+            entry["details"] = v["details"]
+        cached_views[name] = entry
     payload = {
         "model": model,
-        "views": {
-            name: {
-                "q": v["q"],
-                "omega": v["omega"],
-                "samples": v["samples"],
-                "n_ok": v["n_ok"],
-            }
-            for name, v in views.items()
-        },
+        "views": cached_views,
     }
     with open(path, "w") as f:
         json.dump(payload, f)
@@ -229,6 +235,26 @@ def _call_for_sample(prompt: list[dict], settings: LLMSettings) -> str | None:
         prompt, settings=settings,
         temperature=VIEW_TEMPERATURE, max_tokens=VIEW_MAX_TOKENS_THINKING,
     )
+
+
+def _sample_asset_direct(
+    name: str,
+    history_pct: np.ndarray,
+    cfg: Config,
+    settings: LLMSettings,
+) -> list[float]:
+    prompt = _build_prompt(name, cfg, history_pct)
+    samples: list[float] = []
+    for _ in range(cfg.llm_samples):
+        try:
+            raw = _call_for_sample(prompt, settings)
+        except RuntimeError:
+            break
+        value = _parse_view_response(raw)
+        if value is None or not np.isfinite(value) or abs(value) > MAX_PLAUSIBLE_DAILY_PCT:
+            continue
+        samples.append(value / 100.0)
+    return samples
 
 
 def generate_views(
@@ -271,18 +297,7 @@ def generate_views(
         if len(series) < MIN_HISTORY_OBS:
             continue
         history_pct = series.tail(cfg.blm_history_days).to_numpy(dtype=float) * 100.0
-        prompt = _build_prompt(name, cfg, history_pct)
-
-        samples: list[float] = []
-        for _ in range(cfg.llm_samples):
-            try:
-                raw = _call_for_sample(prompt, settings)
-            except RuntimeError:
-                break
-            value = _parse_view_response(raw)
-            if value is None or not np.isfinite(value) or abs(value) > MAX_PLAUSIBLE_DAILY_PCT:
-                continue
-            samples.append(value / 100.0)
+        samples = _sample_asset_direct(name, history_pct, cfg, settings)
         if not samples:
             continue
 
@@ -298,6 +313,38 @@ def generate_views(
 
     _write_cached_views(path, settings.model, views)
     return views, False
+
+
+def _generate_engine_views(
+    returns: pd.DataFrame,
+    names: list[str],
+    cov: np.ndarray,
+    cfg: Config,
+    settings: LLMSettings,
+) -> tuple[dict, bool]:
+    """Select the view engine and run it, falling back to direct sampling.
+
+    The agent engine (LangGraph + web-search MCP) is preferred when configured;
+    any infrastructure failure degrades to the direct history-only engine so a
+    missing MCP server, Chrome, or agent error never blocks the run.
+    """
+    if cfg.llm_view_engine != "agent" or not cfg.llm_agent_websearch:
+        return generate_views(returns, names, cov, cfg, settings=settings)
+
+    from config.llm import WebSearchMCPSettings
+    from models import llm_agent
+
+    mcp_settings = WebSearchMCPSettings.from_env()
+    if not mcp_settings.is_configured:
+        return generate_views(returns, names, cov, cfg, settings=settings)
+
+    try:
+        return llm_agent.generate_agent_views(
+            returns, names, cov, cfg,
+            settings=settings, mcp_settings=mcp_settings,
+        )
+    except Exception:
+        return generate_views(returns, names, cov, cfg, settings=settings)
 
 
 def run_blm(
@@ -322,7 +369,7 @@ def run_blm(
     views: dict = {}
     from_cache = False
     try:
-        views, from_cache = generate_views(returns, names, cov, cfg, settings=settings)
+        views, from_cache = _generate_engine_views(returns, names, cov, cfg, settings)
     except Exception:
         views, from_cache = {}, False
 

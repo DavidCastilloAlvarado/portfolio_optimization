@@ -119,7 +119,7 @@ class TestGenerateViews:
 
         monkeypatch.setattr(blm, "chat_completion", fake_chat)
         monkeypatch.setattr(cache_mod, "CACHE_DIR", str(tmp_path))
-        cfg = Config(llm_samples=3, blm_history_days=30)
+        cfg = Config(llm_view_engine="direct", llm_samples=3, blm_history_days=30)
 
         views, from_cache = blm.generate_views(ret_frame, ["AAA", "BBB"], cov_frame, cfg, settings=SETTINGS)
         assert from_cache is False
@@ -146,7 +146,7 @@ class TestGenerateViews:
 
         monkeypatch.setattr(blm, "chat_completion", fake_chat)
         monkeypatch.setattr(cache_mod, "CACHE_DIR", str(tmp_path))
-        cfg = Config(llm_samples=3)
+        cfg = Config(llm_view_engine="direct", llm_samples=3)
         views, _ = blm.generate_views(ret_frame, ["AAA"], cov_frame, cfg, settings=SETTINGS)
         floor = blm.OMEGA_FLOOR_FRACTION * cfg.llm_tau * cov_frame[0, 0]
         assert views["AAA"]["omega"] == pytest.approx(floor)
@@ -161,7 +161,7 @@ class TestGenerateViews:
             return '{"predicted_avg_daily_return_pct": 0.1}'
 
         monkeypatch.setattr(blm, "chat_completion", fake_chat)
-        cfg = Config(llm_samples=2)
+        cfg = Config(llm_view_engine="direct", llm_samples=2)
         views, _ = blm.generate_views(short, ["AAA"], cov_frame, cfg, settings=SETTINGS)
         assert views == {}
         assert called == []
@@ -172,7 +172,7 @@ class TestGenerateViews:
 
         monkeypatch.setattr(blm, "chat_completion", boom)
         monkeypatch.setattr(cache_mod, "CACHE_DIR", str(tmp_path))
-        cfg = Config(llm_samples=2)
+        cfg = Config(llm_view_engine="direct", llm_samples=2)
         views, _ = blm.generate_views(ret_frame, ["AAA", "BBB"], cov_frame, cfg, settings=SETTINGS)
         assert views == {}
 
@@ -221,7 +221,7 @@ class TestRunBlm:
 
         monkeypatch.setattr(blm, "chat_completion", boom)
         monkeypatch.setattr(cache_mod, "CACHE_DIR", str(tmp_path))
-        cfg = Config(llm_samples=2)
+        cfg = Config(llm_view_engine="direct", llm_samples=2)
         out = blm.run_blm(ret_frame, ["AAA", "BBB"], cov_frame, cfg, settings=SETTINGS)
         assert out["degraded"] is True
         assert out["view_names"] == []
@@ -236,7 +236,7 @@ class TestRunBlm:
 
         monkeypatch.setattr(blm, "chat_completion", fake_chat)
         monkeypatch.setattr(cache_mod, "CACHE_DIR", str(tmp_path))
-        cfg = Config(llm_samples=2)
+        cfg = Config(llm_view_engine="direct", llm_samples=2)
         out = blm.run_blm(ret_frame, ["AAA", "BBB"], cov_frame, cfg, settings=SETTINGS)
         assert out["degraded"] is False
         assert out["view_names"] == ["AAA"]
@@ -249,7 +249,88 @@ class TestRunBlm:
 
         monkeypatch.setattr(blm, "chat_completion", boom)
         monkeypatch.setattr(cache_mod, "CACHE_DIR", str(tmp_path))
-        cfg = Config(llm_samples=2, blm_prior="inverse_vol")
+        cfg = Config(llm_view_engine="direct", llm_samples=2, blm_prior="inverse_vol")
         out = blm.run_blm(ret_frame, ["AAA", "BBB"], cov_frame, cfg, settings=SETTINGS)
         expected = blm.build_equilibrium_prior(cov_frame, cfg.llm_tau, blm.inverse_vol_weights(cov_frame))
         assert np.allclose(out["prior_mean"], expected)
+
+
+class TestEngineDispatch:
+    def test_agent_engine_used_when_configured(self, monkeypatch, tmp_path, ret_frame, cov_frame):
+        calls = {}
+
+        def fake_agent_views(returns, names, cov, cfg, settings=None, mcp_settings=None):
+            calls["agent"] = True
+            return {
+                "AAA": {
+                    "q": 0.002, "omega": 1e-5,
+                    "samples": [0.002], "n_ok": 1,
+                    "details": [{"rationale": "web says up", "sources": ["http://x"], "confidence": 0.5}],
+                },
+            }, False
+
+        monkeypatch.setenv("WEBSEARCH_MCP_COMMAND", "npx")
+        monkeypatch.setattr("models.llm_agent.generate_agent_views", fake_agent_views, raising=False)
+        monkeypatch.setattr(cache_mod, "CACHE_DIR", str(tmp_path))
+        cfg = Config(llm_view_engine="agent", llm_samples=1)
+        out = blm.run_blm(ret_frame, ["AAA", "BBB"], cov_frame, cfg, settings=SETTINGS)
+        assert calls.get("agent") is True
+        assert out["degraded"] is False
+        assert out["view_names"] == ["AAA"]
+
+    def test_agent_failure_falls_back_to_direct(self, monkeypatch, tmp_path, ret_frame, cov_frame):
+        def boom(*a, **k):
+            raise RuntimeError("mcp server down")
+
+        monkeypatch.setenv("WEBSEARCH_MCP_COMMAND", "npx")
+        monkeypatch.setattr("models.llm_agent.generate_agent_views", boom, raising=False)
+
+        def fake_chat(prompt, settings=None, temperature=0.8, max_tokens=160, extra_body=None):
+            if "BBB" in prompt[1]["content"]:
+                return '{"predicted_avg_daily_return_pct": 0.25}'
+            return "garbage"
+
+        monkeypatch.setattr(blm, "chat_completion", fake_chat)
+        monkeypatch.setattr(cache_mod, "CACHE_DIR", str(tmp_path))
+        cfg = Config(llm_view_engine="agent", llm_samples=2)
+        out = blm.run_blm(ret_frame, ["AAA", "BBB"], cov_frame, cfg, settings=SETTINGS)
+        assert out["degraded"] is False
+        assert out["view_names"] == ["BBB"]
+
+    def test_unconfigured_mcp_falls_back_to_direct(self, monkeypatch, tmp_path, ret_frame, cov_frame):
+        monkeypatch.setenv("WEBSEARCH_MCP_COMMAND", "")
+
+        def boom(*a, **k):
+            raise AssertionError("agent must not run without an MCP command")
+
+        monkeypatch.setattr("models.llm_agent.generate_agent_views", boom, raising=False)
+
+        def fake_chat(prompt, settings=None, temperature=0.8, max_tokens=160, extra_body=None):
+            if "BBB" in prompt[1]["content"]:
+                return '{"predicted_avg_daily_return_pct": 0.25}'
+            return "garbage"
+
+        monkeypatch.setattr(blm, "chat_completion", fake_chat)
+        monkeypatch.setattr(cache_mod, "CACHE_DIR", str(tmp_path))
+        cfg = Config(llm_view_engine="agent", llm_samples=2)
+        out = blm.run_blm(ret_frame, ["AAA", "BBB"], cov_frame, cfg, settings=SETTINGS)
+        assert out["degraded"] is False
+        assert out["view_names"] == ["BBB"]
+
+    def test_direct_engine_skips_agent(self, monkeypatch, tmp_path, ret_frame, cov_frame):
+        def boom(*a, **k):
+            raise AssertionError("agent must not run in direct mode")
+
+        monkeypatch.setattr("models.llm_agent.generate_agent_views", boom, raising=False)
+
+        def fake_chat(prompt, settings=None, temperature=0.8, max_tokens=160, extra_body=None):
+            if "BBB" in prompt[1]["content"]:
+                return '{"predicted_avg_daily_return_pct": 0.25}'
+            return "garbage"
+
+        monkeypatch.setattr(blm, "chat_completion", fake_chat)
+        monkeypatch.setattr(cache_mod, "CACHE_DIR", str(tmp_path))
+        cfg = Config(llm_view_engine="direct", llm_samples=2)
+        out = blm.run_blm(ret_frame, ["AAA", "BBB"], cov_frame, cfg, settings=SETTINGS)
+        assert out["degraded"] is False
+        assert out["view_names"] == ["BBB"]

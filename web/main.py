@@ -30,7 +30,7 @@ async def index():
 
 
 @app.post("/optimize")
-async def optimize_endpoint(
+def optimize_endpoint(
     resample: str = Form("none"),
     days: str = Form("720"),
     shares: str = Form(""),
@@ -44,12 +44,21 @@ async def optimize_endpoint(
     blm_prior: str = Form("equal"),
     blm_horizon_days: str = Form("14"),
     blm_history_days: str = Form("56"),
+    llm_view_engine: str = Form("agent"),
+    llm_reasoning_effort: str = Form("medium"),
+    llm_agent_websearch: str = Form("on"),
+    llm_agent_max_tokens: str = Form("32768"),
+    llm_agent_recursion_limit: str = Form("40"),
     monto_usd: str = Form("10000"),
     monthly_delta: str = Form("300"),
     sim_days: str = Form("252"),
     risk_free_annual_perc: str = Form("5"),
 ):
-    """Run the optimization pipeline with form parameters."""
+    """Run the optimization pipeline with form parameters.
+
+    Sync endpoint on purpose: FastAPI runs it in the threadpool, which allows the
+    LLM research agent to open its own asyncio event loop for the MCP session.
+    """
     try:
         data = {
             "resample": resample,
@@ -65,6 +74,11 @@ async def optimize_endpoint(
             "blm_prior": blm_prior,
             "blm_horizon_days": blm_horizon_days,
             "blm_history_days": blm_history_days,
+            "llm_view_engine": llm_view_engine,
+            "llm_reasoning_effort": llm_reasoning_effort,
+            "llm_agent_websearch": llm_agent_websearch,
+            "llm_agent_max_tokens": llm_agent_max_tokens,
+            "llm_agent_recursion_limit": llm_agent_recursion_limit,
             "monto_usd": monto_usd,
             "monthly_delta": monthly_delta,
             "sim_days": sim_days,

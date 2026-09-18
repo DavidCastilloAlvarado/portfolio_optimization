@@ -32,7 +32,8 @@ print(f"Portafolio standard deviation: {std:.4%} -> {round(cfg.monto_usd * std, 
 
 llm_views = result.get("llm_views")
 if llm_views:
-    print(f"\nLLM views: {llm_views['model']}, {llm_views['horizon_days']}-day horizon, "
+    engine = llm_views.get("view_engine", "direct")
+    print(f"\nLLM views: {llm_views['model']} ({engine} engine), {llm_views['horizon_days']}-day horizon, "
           f"{llm_views['samples_per_asset']} samples/asset, "
           f"cache={'yes' if llm_views['from_cache'] else 'no'}")
     if llm_views["degraded"]:
@@ -41,6 +42,10 @@ if llm_views:
         symbol = f" ({a['symbol']})" if a["symbol"] else ""
         print(f"  {a['ticker']}{symbol}: {a['predicted_daily_return_pct']:+.4f}%/day "
               f"(std {a['view_std_pct']:.4f}%, n={a['samples_ok']})")
+        if a.get("rationale"):
+            print(f"    rationale: {a['rationale']}")
+            for url in a.get("sources", [])[:3]:
+                print(f"    source: {url}")
 
 # ── Backtest ──────────────────────────────────────────────────────────
 backtest = result.get("backtest")

@@ -59,6 +59,11 @@ class Config:
     blm_prior: str = "equal"  # "equal" | "inverse_vol": equilibrium prior weights
     blm_horizon_days: int = 14  # Forecast horizon in trading days for LLM views
     blm_history_days: int = 56  # History window (trading days) given to the LLM
+    llm_view_engine: str = "agent"  # "agent" (LangGraph + web research) | "direct" (history-only samples)
+    llm_reasoning_effort: str = "medium"  # "none" | "low" | "medium" | "high" | "xhigh": model reasoning effort
+    llm_agent_websearch: bool = True  # Agent engine: require the web-search MCP server (else fall back to direct)
+    llm_agent_max_tokens: int = 32768  # Completion token budget per agent LLM call, reasoning + output (fits long research notes)
+    llm_agent_recursion_limit: int = 40  # LangGraph supersteps per agent sample (2N+1 steps for N tool calls)
 
     # ── Investment ────────────────────────────────────────────────────
     monto_usd: float = 10000.0
@@ -151,6 +156,18 @@ class Config:
         blm_horizon_days = _parse_int(data.get("blm_horizon_days", ""), 14, 1, 252)
         blm_history_days = _parse_int(data.get("blm_history_days", ""), 56, 5, 504)
 
+        llm_view_engine = str(data.get("llm_view_engine", "agent")).strip().lower()
+        if llm_view_engine not in ("agent", "direct"):
+            llm_view_engine = "direct"
+
+        llm_reasoning_effort = str(data.get("llm_reasoning_effort", "medium")).strip().lower()
+        if llm_reasoning_effort not in ("none", "low", "medium", "high", "xhigh"):
+            llm_reasoning_effort = "medium"
+
+        llm_agent_websearch = data.get("llm_agent_websearch", True) in (True, "true", "on", "1", 1)
+        llm_agent_max_tokens = _parse_int(data.get("llm_agent_max_tokens", ""), 32768, 512, 32768)
+        llm_agent_recursion_limit = _parse_int(data.get("llm_agent_recursion_limit", ""), 40, 5, 200)
+
         return cls(
             resample=data.get("resample", "none"),
             days=int(data.get("days", 720)),
@@ -164,6 +181,11 @@ class Config:
             blm_prior=blm_prior,
             blm_horizon_days=blm_horizon_days,
             blm_history_days=blm_history_days,
+            llm_view_engine=llm_view_engine,
+            llm_reasoning_effort=llm_reasoning_effort,
+            llm_agent_websearch=llm_agent_websearch,
+            llm_agent_max_tokens=llm_agent_max_tokens,
+            llm_agent_recursion_limit=llm_agent_recursion_limit,
             w_limits_per_ticker=w_limits_per_ticker,
             monto_usd=float(data.get("monto_usd", 10000)),
             monthly_delta=float(data.get("monthly_delta", 300)),

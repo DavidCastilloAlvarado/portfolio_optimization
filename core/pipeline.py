@@ -14,16 +14,31 @@ def _llm_views_report(cfg: Config, blm_result: dict) -> dict:
     assets = []
     for name in blm_result["view_names"]:
         v = blm_result["views"][name]
-        assets.append({
+        entry = {
             "ticker": name,
             "symbol": ticker_for(name),
             "predicted_daily_return_pct": float(v["q"] * 100),
             "view_std_pct": float(np.sqrt(v["omega"]) * 100),
             "samples_ok": int(v["n_ok"]),
             "samples_pct": [float(s * 100) for s in v["samples"]],
-        })
+        }
+        details = v.get("details") or []
+        if details:
+            sources = []
+            for d in details:
+                for url in d.get("sources", []):
+                    if url not in sources:
+                        sources.append(url)
+            entry.update({
+                "rationale": details[len(details) // 2].get("rationale", ""),
+                "sources": sources[:12],
+                "confidence": float(np.mean([d.get("confidence", 0.5) for d in details])),
+            })
+        assets.append(entry)
+    agent_sourced = any(v.get("details") for v in blm_result["views"].values())
     return {
         "model": blm_result["model"],
+        "view_engine": "agent" if agent_sourced else "direct",
         "from_cache": bool(blm_result["from_cache"]),
         "degraded": bool(blm_result["degraded"]),
         "tau": float(cfg.llm_tau),

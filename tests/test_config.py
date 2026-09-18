@@ -23,6 +23,11 @@ class TestConfig:
         assert cfg.blm_prior == "equal"
         assert cfg.blm_horizon_days == 14
         assert cfg.blm_history_days == 56
+        assert cfg.llm_view_engine == "agent"
+        assert cfg.llm_reasoning_effort == "medium"
+        assert cfg.llm_agent_websearch is True
+        assert cfg.llm_agent_max_tokens == 32768
+        assert cfg.llm_agent_recursion_limit == 40
 
     def test_risk_free_computation(self):
         cfg = Config()
@@ -156,3 +161,45 @@ class TestStrategyResolution:
         assert cfg.llm_tau == 1.0
         assert cfg.blm_horizon_days == 1
         assert cfg.blm_prior == "equal"
+
+    def test_from_dict_agent_engine_fields(self):
+        data = {
+            "strategy": "llm_bl",
+            "llm_view_engine": "direct",
+            "llm_reasoning_effort": "high",
+            "llm_agent_websearch": "off",
+            "llm_agent_max_tokens": "2048",
+            "llm_agent_recursion_limit": "60",
+        }
+        cfg = Config.from_dict(data)
+        assert cfg.llm_view_engine == "direct"
+        assert cfg.llm_reasoning_effort == "high"
+        assert cfg.llm_agent_websearch is False
+        assert cfg.llm_agent_max_tokens == 2048
+        assert cfg.llm_agent_recursion_limit == 60
+
+    def test_from_dict_agent_engine_defaults(self):
+        cfg = Config.from_dict({"strategy": "llm_bl"})
+        assert cfg.llm_view_engine == "agent"
+        assert cfg.llm_reasoning_effort == "medium"
+        assert cfg.llm_agent_websearch is True
+        assert cfg.llm_agent_max_tokens == 32768
+        assert cfg.llm_agent_recursion_limit == 40
+
+    def test_from_dict_agent_engine_invalid(self):
+        cfg = Config.from_dict({
+            "strategy": "llm_bl",
+            "llm_view_engine": "quantum",
+            "llm_reasoning_effort": "ultra",
+            "llm_agent_max_tokens": "999999",
+            "llm_agent_recursion_limit": "999999",
+        })
+        assert cfg.llm_view_engine == "direct"
+        assert cfg.llm_reasoning_effort == "medium"
+        assert cfg.llm_agent_max_tokens == 32768
+        assert cfg.llm_agent_recursion_limit == 200
+
+    def test_from_dict_websearch_true_variants(self):
+        for raw in (True, "true", "on", "1", 1):
+            cfg = Config.from_dict({"strategy": "llm_bl", "llm_agent_websearch": raw})
+            assert cfg.llm_agent_websearch is True
