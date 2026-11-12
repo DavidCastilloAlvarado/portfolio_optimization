@@ -145,3 +145,41 @@ class TestOptimize:
         assert port_mean_val == pytest.approx(expected_mean)
         expected_std = np.sqrt(float(np.dot(np.dot(weights, two_cov), weights)))
         assert port_std == pytest.approx(expected_std)
+
+    def test_infeasible_max_bounds_raise(self, two_mean, two_cov):
+        """Few assets with tight max weights leave an empty feasible set."""
+        with pytest.raises(ValueError, match="max weights sum"):
+            optimize(two_mean, two_cov, 0.0001, (0.02, 0.12), min_variance=False)
+
+    def test_infeasible_min_bounds_raise(self, two_mean, two_cov):
+        with pytest.raises(ValueError, match="min weights sum"):
+            optimize(two_mean, two_cov, 0.0001, (0.6, 0.9), min_variance=True)
+
+    def test_infeasible_per_asset_bounds_raise(self, two_mean, two_cov):
+        with pytest.raises(ValueError, match="max weights sum"):
+            optimize(two_mean, two_cov, 0.0001, [(0.0, 0.5), (0.0, 0.4)], strategy="kelly")
+
+    def test_negative_sharpe_objective_returns_valid_weights(self, two_cov):
+        weights, mean, std, _ = optimize(
+            np.array([-0.002, -0.001]), two_cov, 0.0001, (0.0, 1.0), strategy="sharpe"
+        )
+        assert np.all(np.isfinite(weights))
+        assert np.isfinite(mean)
+        assert std > 0
+        assert abs(weights.sum() - 1.0) < 1e-6
+
+    def test_feasible_start_can_exclude_equal_weights(self, two_cov):
+        weights = solve_mean_variance(
+            np.array([0.001, 0.002]), two_cov, 0.0001, [(0.8, 0.9), (0.1, 0.2)]
+        )
+        assert weights[0] >= 0.8 - 1e-6
+        assert weights[1] >= 0.1 - 1e-6
+        assert abs(weights.sum() - 1.0) < 1e-6
+
+    def test_invalid_bounds_raise_clear_error(self, two_cov):
+        with pytest.raises(ValueError, match="invalid weight bounds"):
+            optimize(np.array([0.001, 0.002]), two_cov, 0.0001, [(0.7, 0.2), (0.0, 1.0)])
+
+    def test_invalid_covariance_shape_raises(self, two_mean):
+        with pytest.raises(ValueError, match="covariance matrix must have shape"):
+            optimize(two_mean, np.eye(3), 0.0001, (0.0, 1.0))

@@ -2,6 +2,7 @@
 
 import glob
 import os
+import tempfile
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -20,15 +21,28 @@ def read_cache(ticker: str) -> pd.DataFrame | None:
     path = cache_path(ticker)
     if not os.path.exists(path):
         return None
-    df = pd.read_csv(path, parse_dates=["Date"])
-    df["Date"] = pd.to_datetime(df["Date"], utc=True)
-    return df
+    try:
+        df = pd.read_csv(path, parse_dates=["Date"])
+        if "Date" not in df.columns or ticker not in df.columns:
+            return None
+        df["Date"] = pd.to_datetime(df["Date"], utc=True, errors="coerce")
+        return df.dropna(subset=["Date"])
+    except (OSError, ValueError, pd.errors.ParserError):
+        return None
 
 
 def write_cache(ticker: str, table: pd.DataFrame) -> None:
-    """Persist prices to today's cache file."""
+    """Persist prices to today's cache file atomically."""
     os.makedirs(CACHE_DIR, exist_ok=True)
-    table.to_csv(cache_path(ticker), index=False)
+    destination = cache_path(ticker)
+    fd, temporary = tempfile.mkstemp(prefix=".cache-", suffix=".csv", dir=CACHE_DIR)
+    os.close(fd)
+    try:
+        table.to_csv(temporary, index=False)
+        os.replace(temporary, destination)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def latest_cache_file(ticker: str) -> str | None:
@@ -38,10 +52,20 @@ def latest_cache_file(ticker: str) -> str | None:
 
 
 def read_prices(ticker: str) -> pd.Series | None:
-    """Read a single ticker's price column from the most recent cache file."""
-    path = latest_cache_file(ticker)
-    if path is None:
+    """Read and merge all valid cached price history for one ticker."""
+    files = sorted(glob.glob(f"{CACHE_DIR}/{ticker}_*.csv"))
+    frames = []
+    for path in files:
+        try:
+            df = pd.read_csv(path, parse_dates=["Date"])
+            if "Date" not in df.columns or ticker not in df.columns:
+                continue
+            df["Date"] = pd.to_datetime(df["Date"], utc=True, errors="coerce").dt.normalize()
+            frames.append(df.dropna(subset=["Date"])[["Date", ticker]])
+        except (OSError, ValueError, pd.errors.ParserError):
+            continue
+    if not frames:
         return None
-    df = pd.read_csv(path, parse_dates=["Date"])
-    index = pd.to_datetime(df["Date"], utc=True).dt.normalize()
-    return df.set_index(index).sort_index()[ticker]
+    merged = pd.concat(frames, ignore_index=True)
+    merged = merged.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
+    return merged.set_index("Date")[ticker]

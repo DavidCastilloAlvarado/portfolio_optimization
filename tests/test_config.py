@@ -18,6 +18,16 @@ class TestConfig:
         assert cfg.w_limits_per_ticker == {}
         assert cfg.strategy == "sharpe"
         assert cfg.kelly_fraction == 0.5
+        assert cfg.llm_samples == 5
+        assert cfg.llm_tau == pytest.approx(1.0 / 26.0)
+        assert cfg.blm_prior == "equal"
+        assert cfg.blm_horizon_days == 14
+        assert cfg.blm_history_days == 56
+        assert cfg.llm_view_engine == "agent"
+        assert cfg.llm_reasoning_effort == "medium"
+        assert cfg.llm_agent_websearch is True
+        assert cfg.llm_agent_max_tokens == 32768
+        assert cfg.llm_agent_recursion_limit == 40
 
     def test_risk_free_computation(self):
         cfg = Config()
@@ -123,3 +133,113 @@ class TestStrategyResolution:
         cfg = Config.from_dict({"strategy": "quantum"})
         assert cfg.strategy == "sharpe"
         assert cfg.resolve_strategy() == "sharpe"
+
+    def test_resolve_llm_bl(self):
+        assert Config(strategy="llm_bl").resolve_strategy() == "llm_bl"
+
+    def test_from_dict_llm_bl(self):
+        data = {
+            "strategy": "llm_bl",
+            "llm_samples": "10",
+            "llm_tau": "0.05",
+            "blm_prior": "inverse_vol",
+            "blm_horizon_days": "7",
+            "blm_history_days": "120",
+        }
+        cfg = Config.from_dict(data)
+        assert cfg.strategy == "llm_bl"
+        assert cfg.llm_samples == 10
+        assert cfg.llm_tau == pytest.approx(0.05)
+        assert cfg.blm_prior == "inverse_vol"
+        assert cfg.blm_horizon_days == 7
+        assert cfg.blm_history_days == 120
+
+    def test_from_dict_llm_clamped(self):
+        cfg = Config.from_dict({"strategy": "llm_bl", "llm_samples": "9999", "llm_tau": "5",
+                                "blm_horizon_days": "0", "blm_prior": "bogus"})
+        assert cfg.llm_samples == 50
+        assert cfg.llm_tau == 1.0
+        assert cfg.blm_horizon_days == 1
+        assert cfg.blm_prior == "equal"
+
+    def test_from_dict_agent_engine_fields(self):
+        data = {
+            "strategy": "llm_bl",
+            "llm_view_engine": "direct",
+            "llm_reasoning_effort": "high",
+            "llm_agent_websearch": "off",
+            "llm_agent_max_tokens": "2048",
+            "llm_agent_recursion_limit": "60",
+        }
+        cfg = Config.from_dict(data)
+        assert cfg.llm_view_engine == "direct"
+        assert cfg.llm_reasoning_effort == "high"
+        assert cfg.llm_agent_websearch is False
+        assert cfg.llm_agent_max_tokens == 2048
+        assert cfg.llm_agent_recursion_limit == 60
+
+    def test_from_dict_agent_engine_defaults(self):
+        cfg = Config.from_dict({"strategy": "llm_bl"})
+        assert cfg.llm_view_engine == "agent"
+        assert cfg.llm_reasoning_effort == "medium"
+        assert cfg.llm_agent_websearch is True
+        assert cfg.llm_agent_max_tokens == 32768
+        assert cfg.llm_agent_recursion_limit == 40
+
+    def test_from_dict_agent_engine_invalid(self):
+        cfg = Config.from_dict({
+            "strategy": "llm_bl",
+            "llm_view_engine": "quantum",
+            "llm_reasoning_effort": "ultra",
+            "llm_agent_max_tokens": "999999",
+            "llm_agent_recursion_limit": "999999",
+        })
+        assert cfg.llm_view_engine == "direct"
+        assert cfg.llm_reasoning_effort == "medium"
+        assert cfg.llm_agent_max_tokens == 32768
+        assert cfg.llm_agent_recursion_limit == 200
+
+    def test_from_dict_websearch_true_variants(self):
+        for raw in (True, "true", "on", "1", 1):
+            cfg = Config.from_dict({"strategy": "llm_bl", "llm_agent_websearch": raw})
+            assert cfg.llm_agent_websearch is True
+    def test_from_dict_selection_fields(self):
+        cfg = Config.from_dict({
+            "selection_top_n": "14",
+            "selection_sector_quant_weight": "0.75",
+            "selection_name_llm_weight": "0.3",
+            "selection_event_risk_days": "7",
+            "selection_recursion_limit": "120",
+            "selection_verdict_concurrency": "4",
+        })
+        assert cfg.selection_top_n == 14
+        assert cfg.selection_sector_quant_weight == pytest.approx(0.75)
+        assert cfg.selection_name_llm_weight == pytest.approx(0.3)
+        assert cfg.selection_event_risk_days == 7
+        assert cfg.selection_recursion_limit == 120
+        assert cfg.selection_verdict_concurrency == 4
+
+    def test_from_dict_selection_defaults(self):
+        cfg = Config.from_dict({})
+        assert cfg.selection_top_n == 10
+        assert cfg.selection_sector_quant_weight == pytest.approx(0.6)
+        assert cfg.selection_name_llm_weight == pytest.approx(0.5)
+        assert cfg.selection_event_risk_days == 5
+        assert cfg.selection_recursion_limit == 160
+        assert cfg.selection_verdict_concurrency == 2
+
+    def test_from_dict_selection_clamped(self):
+        cfg = Config.from_dict({
+            "selection_top_n": "999",
+            "selection_sector_quant_weight": "5",
+            "selection_name_llm_weight": "-3",
+            "selection_event_risk_days": "999",
+            "selection_recursion_limit": "1",
+            "selection_verdict_concurrency": "99",
+        })
+        assert cfg.selection_top_n == 16
+        assert cfg.selection_sector_quant_weight == pytest.approx(1.0)
+        assert cfg.selection_name_llm_weight == pytest.approx(0.0)
+        assert cfg.selection_event_risk_days == 30
+        assert cfg.selection_recursion_limit == 20
+        assert cfg.selection_verdict_concurrency == 8

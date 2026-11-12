@@ -20,6 +20,10 @@ __CSS__
 </head>
 <body>
 <div class="container">
+    <nav class="page-nav">
+        <a href="/" class="nav-optimizer active" aria-current="page">Optimizer</a>
+        <a href="/select" class="nav-selection">Selection</a>
+    </nav>
     <div class="editor-bar">
         <div class="editor-bar-left">
             <span class="dot dot-red"></span>
@@ -27,7 +31,7 @@ __CSS__
             <span class="dot dot-green"></span>
             <span class="editor-file">~/portfolio_optimization/portfolio_optimizer.py</span>
         </div>
-        <button type="button" class="btn-theme" id="theme-toggle">&#x1F319; Dark</button>
+        <button type="button" class="btn-theme" id="theme-toggle" aria-pressed="true">&#x1F319; Dark</button>
     </div>
 
     <h1>Portfolio Optimizer</h1>
@@ -37,11 +41,11 @@ __CSS__
 
         <!-- Data -->
         <div class="collapse-section open">
-            <div class="collapse-header">
+            <button type="button" class="collapse-header" aria-expanded="true" aria-controls="data-body">
                 <span class="title"><span class="icon">&#x1F4CA;</span> Data</span>
-                <span class="chevron">&#x25B6;</span>
-            </div>
-            <div class="collapse-body">
+                <span class="chevron" aria-hidden="true">&#x25B6;</span>
+            </button>
+            <div class="collapse-body" id="data-body">
                 <div class="form-row">
                     <div class="form-group half">
                         <label for="resample">Resample Frequency</label>
@@ -61,11 +65,11 @@ __CSS__
 
         <!-- Assets -->
         <div class="collapse-section open">
-            <div class="collapse-header">
+            <button type="button" class="collapse-header" aria-expanded="true" aria-controls="assets-body">
                 <span class="title"><span class="icon">&#x1F3E2;</span> Assets</span>
-                <span class="chevron">&#x25B6;</span>
-            </div>
-            <div class="collapse-body">
+                <span class="chevron" aria-hidden="true">&#x25B6;</span>
+            </button>
+            <div class="collapse-body" id="assets-body">
                 <div class="form-group full">
                     <label for="shares">Tickers (comma-separated)</label>
                     <textarea id="shares" name="shares" rows="2">XLU, QQQ, SCHD, GLDM, SPY, AAPL, TSM, AMD, GOOG, IE00BFMXXD54, IE00B53SZB19, IE00B4ND3602</textarea>
@@ -75,11 +79,11 @@ __CSS__
 
         <!-- Optimization -->
         <div class="collapse-section open">
-            <div class="collapse-header">
+            <button type="button" class="collapse-header" aria-expanded="true" aria-controls="optimization-body">
                 <span class="title"><span class="icon">&#x2699;</span> Optimization</span>
-                <span class="chevron">&#x25B6;</span>
-            </div>
-            <div class="collapse-body">
+                <span class="chevron" aria-hidden="true">&#x25B6;</span>
+            </button>
+            <div class="collapse-body" id="optimization-body">
                 <div class="form-row">
                     <div class="form-group half">
                         <label for="w_limits">Weight Limits (min,max)</label>
@@ -120,6 +124,11 @@ __CSS__
                             <span class="strategy-name">Growth (Kelly)</span>
                             <span class="strategy-desc">Maximizes the long-term geometric growth rate of wealth.</span>
                         </label>
+                        <label class="strategy-option">
+                            <input type="radio" name="strategy" value="llm_bl" id="strategy-llm_bl">
+                            <span class="strategy-name">Black-Litterman (LLM)</span>
+                            <span class="strategy-desc">LLM return forecasts + uncertainty, blended with market equilibrium (Bayesian).</span>
+                        </label>
                     </div>
                 </div>
                 <div class="kelly-row" id="kelly-row" hidden>
@@ -134,6 +143,56 @@ __CSS__
                         <span>The growth-optimal (Kelly) portfolio maximizes the expected log of wealth, which equals the long-run compound growth rate. A smaller fraction is more conservative; full Kelly (100%) is aggressive and amplifies estimation error.</span>
                     </div>
                 </div>
+                <div class="llm-row" id="llm-row" hidden>
+                    <div class="llm-controls">
+                        <div class="form-row" style="margin-bottom:0;">
+                            <div class="form-group">
+                                <label for="llm_samples">LLM Samples / Asset</label>
+                                <input type="number" id="llm_samples" name="llm_samples" value="5" min="1" max="50">
+                            </div>
+                            <div class="form-group">
+                                <label for="llm_tau">Confidence (&tau;)</label>
+                                <input type="number" id="llm_tau" name="llm_tau" value="0.0385" step="any" min="0.0001" max="1">
+                            </div>
+                        </div>
+                        <div class="form-row" style="margin-top:10px; margin-bottom:0;">
+                            <div class="form-group">
+                                <label for="blm_prior">Equilibrium Prior</label>
+                                <select id="blm_prior" name="blm_prior">
+                                    <option value="equal" selected>Equal weights</option>
+                                    <option value="inverse_vol">Inverse volatility</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="blm_horizon_days">Forecast Horizon (days)</label>
+                                <input type="number" id="blm_horizon_days" name="blm_horizon_days" value="14" min="1" max="252">
+                            </div>
+                        </div>
+                        <div class="form-row" style="margin-top:10px; margin-bottom:0;">
+                            <div class="form-group">
+                                <label for="llm_view_engine">View Engine</label>
+                                <select id="llm_view_engine" name="llm_view_engine">
+                                    <option value="agent" selected>Research agent (web search)</option>
+                                    <option value="direct">Direct (history only)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="llm_reasoning_effort">Reasoning Effort</label>
+                                <select id="llm_reasoning_effort" name="llm_reasoning_effort">
+                                    <option value="none">Off</option>
+                                    <option value="low">Low</option>
+                                    <option value="medium" selected>Medium</option>
+                                    <option value="high">High</option>
+                                    <option value="xhigh">Extra high</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kelly-desc">
+                        <span class="kelly-desc-title">Black-Litterman (LLM) strategy</span>
+                        <span>The research agent (LLM via LLM_BASE_URL / LLM_MODEL env vars) studies each asset&rsquo;s news, analyst consensus and earnings through the local Chrome web-search MCP, reasons with the selected effort, and returns a forecast contract &mdash; per asset, LLM Samples / Asset times. The sample mean becomes the view, the sample variance its confidence; views blend with the market-equilibrium prior and are cached per day. Agent samples take a few minutes each &mdash; lower the sample count or use Direct mode for fast runs. If the LLM or the search server is unreachable, the run degrades gracefully.</span>
+                    </div>
+                </div>
                 <div class="min-variance-warning" id="min-variance-warning">
                     <span class="mvw-icon">&#x26A0;&#xFE0F;</span>
                     <span>With Minimal Variance, the Risk-Free Rate does not change the weights &mdash; it only affects the displayed Sharpe ratio.</span>
@@ -142,16 +201,20 @@ __CSS__
                     <span class="mvw-icon">&#x26A0;&#xFE0F;</span>
                     <span>Growth (Kelly) maximizes geometric growth; the Risk-Free Rate does not change the weights. Full Kelly is aggressive &mdash; half-Kelly (50%) is the recommended practical default.</span>
                 </div>
+                <div class="min-variance-warning" id="llm-warning">
+                    <span class="mvw-icon">&#x26A0;&#xFE0F;</span>
+                    <span>Black-Litterman (LLM) calls the configured LLM once per sample per asset &mdash; expect a short wait and possible API cost. The Risk-Free Rate is still used by the final optimizer, not by the LLM views.</span>
+                </div>
             </div>
         </div>
 
         <!-- Investment -->
         <div class="collapse-section open">
-            <div class="collapse-header">
+            <button type="button" class="collapse-header" aria-expanded="true" aria-controls="investment-body">
                 <span class="title"><span class="icon">&#x1F4B0;</span> Investment</span>
-                <span class="chevron">&#x25B6;</span>
-            </div>
-            <div class="collapse-body">
+                <span class="chevron" aria-hidden="true">&#x25B6;</span>
+            </button>
+            <div class="collapse-body" id="investment-body">
                 <div class="form-row">
                     <div class="form-group half">
                         <label for="monto_usd">Initial Investment (USD)</label>
@@ -167,11 +230,11 @@ __CSS__
 
         <!-- Simulation -->
         <div class="collapse-section open">
-            <div class="collapse-header">
+            <button type="button" class="collapse-header" aria-expanded="true" aria-controls="simulation-body">
                 <span class="title"><span class="icon">&#x1F50D;</span> Simulation</span>
-                <span class="chevron">&#x25B6;</span>
-            </div>
-            <div class="collapse-body">
+                <span class="chevron" aria-hidden="true">&#x25B6;</span>
+            </button>
+            <div class="collapse-body" id="simulation-body">
                 <div class="form-row">
                     <div class="form-group half">
                         <label for="sim_days">Simulation Days</label>
@@ -187,8 +250,20 @@ __CSS__
         </div>
     </form>
 
+    <section class="job-progress" id="job-progress" aria-busy="false" hidden>
+        <div class="job-progress-heading">
+            <h2 id="job-progress-title">Optimization progress</h2>
+            <span id="job-progress-elapsed"></span>
+        </div>
+        <p class="job-progress-state" id="job-progress-state" role="status" aria-live="polite">Waiting to start</p>
+        <div class="job-progress-track" id="job-progress-track" role="progressbar" aria-label="Analysis progress" aria-valuemin="0" aria-valuemax="100">
+            <span></span>
+        </div>
+        <ol class="job-progress-events" id="job-progress-events" aria-label="Recent analysis events"></ol>
+    </section>
+
     <!-- Results -->
-    <div class="results" id="results">
+    <div class="results" id="results" aria-live="polite" aria-busy="false">
         <div class="results-title">&#x1F4C8; Optimization Results</div>
         <div class="result-card" style="margin-bottom:20px;">
             <div class="label">Strategy</div>
@@ -196,12 +271,13 @@ __CSS__
         </div>
 
         <table class="weights-table">
+            <caption class="sr-only">Recommended portfolio weights</caption>
             <thead>
                 <tr>
-                    <th>Ticker</th>
-                    <th>Allocation</th>
-                    <th class="pct">Weight</th>
-                    <th class="usd">USD</th>
+                    <th scope="col">Ticker</th>
+                    <th scope="col">Allocation</th>
+                    <th scope="col" class="pct">Weight</th>
+                    <th scope="col" class="usd">USD</th>
                 </tr>
             </thead>
             <tbody id="weights-body"></tbody>
@@ -215,6 +291,26 @@ __CSS__
             <div class="results-grid" id="backtest-stats"></div>
         </div>
 
+        <!-- LLM Views (Black-Litterman) -->
+        <div id="llm-views-section" style="display:none; margin-top:32px; padding-top:24px; border-top:1px solid #3c3c3c;">
+            <div style="font-size:16px; font-weight:400; color:#dcdcaa; margin-bottom:8px;">&#x1F916; LLM Views (Black-Litterman)</div>
+            <div class="llm-views-note" id="llm-views-note"></div>
+            <table class="weights-table">
+                <caption class="sr-only">LLM Black-Litterman asset views</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Ticker</th>
+                        <th scope="col">Predicted Daily Return</th>
+                        <th scope="col" class="pct">View Std</th>
+                        <th scope="col" class="usd">Samples</th>
+                        <th scope="col" class="pct">Analyst Rationale</th>
+                        <th scope="col" class="usd">Sources</th>
+                    </tr>
+                </thead>
+                <tbody id="llm-views-body"></tbody>
+            </table>
+        </div>
+
         <div class="btn-group">
             <button class="btn-secondary" id="toggle-json">&#x1F4E6; Show JSON</button>
             <button class="btn-secondary" id="copy-btn" style="display:none;">&#x1F4CB; Copy</button>
@@ -222,20 +318,13 @@ __CSS__
         <pre class="json-block" id="json-block"></pre>
     </div>
 
-    <div class="error-msg" id="error-msg"></div>
+    <div class="error-msg" id="error-msg" role="alert" tabindex="-1"></div>
 
     <div class="footer">
         // created by <a href="https://github.com/davidcastilloalvarado" target="_blank">David Castillo</a>
     </div>
 </div>
 
-<!-- Spinner -->
-<div class="spinner-overlay" id="spinner">
-    <div class="spinner-wrapper">
-        <div class="spinner"></div>
-        <div class="spinner-text" id="spinner-text">Loading...</div>
-    </div>
-</div>
 <script>
 window.ISIN_TICKER_MAP = __ISIN_MAP__;
 </script>
