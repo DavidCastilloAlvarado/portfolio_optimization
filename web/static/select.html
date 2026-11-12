@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>S&P 100 Selection — Portfolio Optimizer</title>
+<script>
+(function () {
+    var theme = 'dark';
+    try { theme = localStorage.getItem('po-theme') || 'dark'; } catch (e) {}
+    var m = location.hash.match(/^#(dark|light)$/);
+    if (m) {
+        theme = m[1];
+        try { localStorage.setItem('po-theme', theme); } catch (e) {}
+    }
+    document.documentElement.setAttribute('data-theme', theme);
+})();
+</script>
+__CSS__
+</head>
+<body>
+<div class="container">
+    <nav class="page-nav">
+        <a href="/" class="nav-optimizer">Optimizer</a>
+        <a href="/select" class="nav-selection active" aria-current="page">Selection</a>
+    </nav>
+    <div class="editor-bar">
+        <div class="editor-bar-left">
+            <span class="dot dot-red"></span>
+            <span class="dot dot-yellow"></span>
+            <span class="dot dot-green"></span>
+            <span class="editor-file">~/portfolio_optimization/sp100_selection.py</span>
+        </div>
+        <button type="button" class="btn-theme" id="theme-toggle" aria-pressed="true">&#x1F319; Dark</button>
+    </div>
+
+    <h1>S&amp;P 100 Selection</h1>
+    <p class="subtitle">// Quant funnel + LLM research &mdash; which names deserve a seat right now</p>
+
+    <div class="sel-controls">
+        <label for="selection_top_n">Names</label>
+        <select id="selection_top_n" name="selection_top_n">
+            <option value="8">8</option>
+            <option value="10" selected>10</option>
+            <option value="12">12</option>
+            <option value="14">14</option>
+            <option value="16">16</option>
+        </select>
+        <label for="selection_force_refresh">Force refresh (ignore today's caches)</label>
+        <input type="checkbox" id="selection_force_refresh" name="selection_force_refresh">
+        <button type="button" class="btn" id="btn-stage-screen">&#x1F4CA; 1 &middot; Quant screen</button>
+        <button type="button" class="btn" id="btn-stage-briefing">&#x1F30D; 2 &middot; Market briefing</button>
+        <button type="button" class="btn" id="btn-stage-verdicts">&#x1F50D; 3 &middot; Name verdicts</button>
+        <button type="button" class="btn" id="btn-stage-all">&#x1F680; Full funnel</button>
+    </div>
+    <div class="sel-agent-controls" aria-label="Selection agent settings">
+        <div class="sel-agent-setting">
+            <label for="selection_recursion_limit">Briefing step limit</label>
+            <input type="number" id="selection_recursion_limit" name="selection_recursion_limit" value="160" min="20" max="200" step="10">
+            <span>Increase if briefing stops before finishing research.</span>
+        </div>
+        <div class="sel-agent-setting">
+            <label for="selection_verdict_concurrency">Parallel name verdicts</label>
+            <input type="number" id="selection_verdict_concurrency" name="selection_verdict_concurrency" value="2" min="1" max="8" step="1">
+            <span>Lower this for smaller or slower models.</span>
+        </div>
+    </div>
+    <section class="job-progress" id="job-progress" aria-busy="false" hidden>
+        <div class="job-progress-heading">
+            <h2 id="job-progress-title">Selection progress</h2>
+            <span id="job-progress-elapsed"></span>
+        </div>
+        <p class="job-progress-state" id="job-progress-state" role="status" aria-live="polite">Waiting to start</p>
+        <div class="job-progress-track" id="job-progress-track" role="progressbar" aria-label="Selection progress" aria-valuemin="0" aria-valuemax="100">
+            <span></span>
+        </div>
+        <ol class="job-progress-events" id="job-progress-events" aria-label="Recent selection events"></ol>
+    </section>
+    <div class="sel-stage-status" id="stage-status" role="status" aria-live="polite"></div>
+
+    <div class="error" id="error-msg" role="alert" tabindex="-1"></div>
+
+    <div id="results" aria-live="polite" aria-busy="false">
+        <div id="briefing-section" hidden>
+            <div class="results-title">&#x1F30D; Market Briefing <span class="dim" id="briefing-asof"></span></div>
+            <div class="briefing-summary" id="briefing-summary"></div>
+            <div class="results-grid" id="briefing-stats"></div>
+            <div><strong style="font-size:12px;color:var(--text-muted)">MACRO RISKS</strong><ul class="briefing-list" id="briefing-risks"></ul></div>
+            <div><strong style="font-size:12px;color:var(--text-muted)">TRENDING THEMES</strong><ul class="briefing-list" id="briefing-themes"></ul></div>
+        </div>
+
+        <div id="sectors-section" hidden>
+            <div class="results-title">&#x1F3E6; Sector Screen</div>
+            <p class="sel-note">Quant: member momentum (60%) + breadth (40%). Blended adds the LLM regime call (trend &times; (1 &minus; 0.5 &times; fragility)). Top 3 sectors define the investable set.</p>
+            <div style="overflow-x:auto"><table class="sel-table" id="sectors-table">
+                <caption class="sr-only">Sector screening and blended scores</caption>
+                <thead><tr>
+                    <th scope="col">#</th><th scope="col">Sector</th><th scope="col">Members</th><th scope="col">Quant</th><th scope="col">Momentum</th><th scope="col">Breadth</th>
+                    <th scope="col">LLM regime</th><th scope="col">Driver</th><th scope="col">Conv.</th><th scope="col">Final</th>
+                </tr></thead>
+                <tbody id="sectors-body"></tbody>
+            </table></div>
+        </div>
+
+        <div id="selection-section" hidden>
+            <div class="results-title">&#x1F3C6; Selected Names <span class="dim" id="selection-asof"></span>
+                <button type="button" class="btn" id="btn-send-optimizer" style="float:right">&#x1F680; Send to Optimizer</button>
+            </div>
+            <p class="sel-note">Final = (1 &minus; v) &times; quant finance score + v &times; LLM conviction. Hard gates: sector must be in the top 3; an LLM veto removes a name; earnings within the flag window are marked.</p>
+            <div style="overflow-x:auto"><table class="sel-table" id="selection-table">
+                <caption class="sr-only">Selected portfolio candidates</caption>
+                <thead><tr>
+                    <th scope="col">#</th><th scope="col">Asset</th><th scope="col">Sector</th><th scope="col">Quant</th><th scope="col">LLM conv.</th><th scope="col">Final</th>
+                    <th scope="col">1M</th><th scope="col">3M</th><th scope="col">6M</th><th scope="col">Off 52w high</th><th scope="col">PE</th><th scope="col">Thesis</th><th scope="col">Overhangs / flags</th>
+                </tr></thead>
+                <tbody id="selection-body"></tbody>
+            </table></div>
+            <div id="vetoed-box" hidden>
+                <strong style="font-size:12px;color:var(--orange)">VETOED BY THE LLM</strong>
+                <span class="sel-chip" id="vetoed-chips"></span>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+__JS__
+</script>
+</body>
+</html>

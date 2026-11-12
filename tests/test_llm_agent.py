@@ -89,8 +89,37 @@ class TestPrompts:
         assert "14 trading days" in prompt
         assert "0.10, -0.20, 0.30" in prompt
 
+    def test_sample_marker_is_the_first_line(self):
+        cfg = Config(llm_view_engine="agent", llm_samples=4, blm_horizon_days=14)
+        prompt = build_user_prompt("GOOG", cfg, np.array([0.1]), sample_index=2)
+        assert prompt.startswith("This is the sample 2 of 4.")
+        assert "Asset: GOOG" in prompt
+        assert build_user_prompt("GOOG", cfg, np.array([0.1])).startswith("Asset: GOOG")
+
 
 class TestGenerateAgentViews:
+    def test_samples_use_distinct_prompts(self, monkeypatch, tmp_path, ret_frame, cov_frame):
+        seen: list[str] = []
+
+        class RecordingAgent(FakeAgent):
+            async def ainvoke(self, messages, config=None):
+                seen.append(messages["messages"])
+                return await super().ainvoke(messages, config=config)
+
+        monkeypatch.setattr(agent_mod, "MCPAdapter", FakeAdapter)
+        agents = iter([RecordingAgent([_contract(0.10), _contract(0.20)])])
+        monkeypatch.setattr(agent_mod, "create_agent", lambda *a, **k: next(agents))
+        monkeypatch.setattr(cache_mod, "CACHE_DIR", str(tmp_path))
+        cfg = Config(llm_view_engine="agent", llm_samples=2)
+
+        agent_mod.generate_agent_views(
+            ret_frame, ["AAA"], cov_frame, cfg,
+            settings=SETTINGS, mcp_settings=MCP_SETTINGS,
+        )
+        assert len(seen) == 2
+        assert seen[0].startswith("This is the sample 1 of 2.")
+        assert seen[1].startswith("This is the sample 2 of 2.")
+
     def test_samples_become_q_and_omega(self, monkeypatch, tmp_path, ret_frame, cov_frame):
         monkeypatch.setattr(agent_mod, "MCPAdapter", FakeAdapter)
         agents = iter([

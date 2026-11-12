@@ -1,0 +1,502 @@
+{
+ "NVDA": {
+  "name": "Nvidia",
+  "sector": "Information Technology",
+  "sub_industry": "Semiconductors"
+ },
+ "AAPL": {
+  "name": "Apple Inc.",
+  "sector": "Information Technology",
+  "sub_industry": "Technology Hardware, Storage & Peripherals"
+ },
+ "GOOGL": {
+  "name": "Alphabet Inc. (Class A)",
+  "sector": "Communication Services",
+  "sub_industry": "Interactive Media & Services"
+ },
+ "GOOG": {
+  "name": "Alphabet Inc. (Class C)",
+  "sector": "Communication Services",
+  "sub_industry": "Interactive Media & Services"
+ },
+ "MSFT": {
+  "name": "Microsoft",
+  "sector": "Information Technology",
+  "sub_industry": "Systems Software"
+ },
+ "AMZN": {
+  "name": "Amazon",
+  "sector": "Consumer Discretionary",
+  "sub_industry": "Broadline Retail"
+ },
+ "META": {
+  "name": "Meta Platforms",
+  "sector": "Communication Services",
+  "sub_industry": "Interactive Media & Services"
+ },
+ "AVGO": {
+  "name": "Broadcom",
+  "sector": "Information Technology",
+  "sub_industry": "Semiconductors"
+ },
+ "TSLA": {
+  "name": "Tesla, Inc.",
+  "sector": "Consumer Discretionary",
+  "sub_industry": "Automobile Manufacturers"
+ },
+ "MU": {
+  "name": "Micron Technology",
+  "sector": "Information Technology",
+  "sub_industry": "Semiconductors"
+ },
+ "LLY": {
+  "name": "Lilly (Eli)",
+  "sector": "Health Care",
+  "sub_industry": "Pharmaceuticals"
+ },
+ "JPM": {
+  "name": "JPMorgan Chase",
+  "sector": "Financials",
+  "sub_industry": "Diversified Banks"
+ },
+ "AMD": {
+  "name": "Advanced Micro Devices",
+  "sector": "Information Technology",
+  "sub_industry": "Semiconductors"
+ },
+ "WMT": {
+  "name": "Walmart",
+  "sector": "Consumer Staples",
+  "sub_industry": "Consumer Staples Merchandise Retail"
+ },
+ "V": {
+  "name": "Visa Inc.",
+  "sector": "Financials",
+  "sub_industry": "Transaction & Payment Processing Services"
+ },
+ "XOM": {
+  "name": "ExxonMobil",
+  "sector": "Energy",
+  "sub_industry": "Integrated Oil & Gas"
+ },
+ "JNJ": {
+  "name": "Johnson & Johnson",
+  "sector": "Health Care",
+  "sub_industry": "Pharmaceuticals"
+ },
+ "INTC": {
+  "name": "Intel",
+  "sector": "Information Technology",
+  "sub_industry": "Semiconductors"
+ },
+ "MA": {
+  "name": "Mastercard",
+  "sector": "Financials",
+  "sub_industry": "Transaction & Payment Processing Services"
+ },
+ "ABBV": {
+  "name": "AbbVie",
+  "sector": "Health Care",
+  "sub_industry": "Biotechnology"
+ },
+ "ORCL": {
+  "name": "Oracle Corporation",
+  "sector": "Information Technology",
+  "sub_industry": "Application Software"
+ },
+ "CSCO": {
+  "name": "Cisco",
+  "sector": "Information Technology",
+  "sub_industry": "Communications Equipment"
+ },
+ "PLTR": {
+  "name": "Palantir Technologies",
+  "sector": "Information Technology",
+  "sub_industry": "Application Software"
+ },
+ "CVX": {
+  "name": "Chevron Corporation",
+  "sector": "Energy",
+  "sub_industry": "Integrated Oil & Gas"
+ },
+ "BAC": {
+  "name": "Bank of America",
+  "sector": "Financials",
+  "sub_industry": "Diversified Banks"
+ },
+ "COST": {
+  "name": "Costco",
+  "sector": "Consumer Staples",
+  "sub_industry": "Consumer Staples Merchandise Retail"
+ },
+ "KO": {
+  "name": "Coca-Cola Company (The)",
+  "sector": "Consumer Staples",
+  "sub_industry": "Soft Drinks & Non-alcoholic Beverages"
+ },
+ "DELL": {
+  "name": "Dell Technologies",
+  "sector": "Information Technology",
+  "sub_industry": "Technology Hardware, Storage & Peripherals"
+ },
+ "CAT": {
+  "name": "Caterpillar Inc.",
+  "sector": "Industrials",
+  "sub_industry": "Construction Machinery & Heavy Transportation Equipment"
+ },
+ "MRK": {
+  "name": "Merck & Co.",
+  "sector": "Health Care",
+  "sub_industry": "Pharmaceuticals"
+ },
+ "PG": {
+  "name": "Procter & Gamble",
+  "sector": "Consumer Staples",
+  "sub_industry": "Personal Care Products"
+ },
+ "LRCX": {
+  "name": "Lam Research",
+  "sector": "Information Technology",
+  "sub_industry": "Semiconductor Materials & Equipment"
+ },
+ "UNH": {
+  "name": "UnitedHealth Group",
+  "sector": "Health Care",
+  "sub_industry": "Managed Health Care"
+ },
+ "AMAT": {
+  "name": "Applied Materials",
+  "sector": "Information Technology",
+  "sub_industry": "Semiconductor Materials & Equipment"
+ },
+ "GE": {
+  "name": "GE Aerospace",
+  "sector": "Industrials",
+  "sub_industry": "Aerospace & Defense"
+ },
+ "MS": {
+  "name": "Morgan Stanley",
+  "sector": "Financials",
+  "sub_industry": "Investment Banking & Brokerage"
+ },
+ "NFLX": {
+  "name": "Netflix",
+  "sector": "Communication Services",
+  "sub_industry": "Movies & Entertainment"
+ },
+ "PANW": {
+  "name": "Palo Alto Networks",
+  "sector": "Information Technology",
+  "sub_industry": "Systems Software"
+ },
+ "HD": {
+  "name": "Home Depot (The)",
+  "sector": "Consumer Discretionary",
+  "sub_industry": "Home Improvement Retail"
+ },
+ "PM": {
+  "name": "Philip Morris International",
+  "sector": "Consumer Staples",
+  "sub_industry": "Tobacco"
+ },
+ "GS": {
+  "name": "Goldman Sachs",
+  "sector": "Financials",
+  "sub_industry": "Investment Banking & Brokerage"
+ },
+ "WFC": {
+  "name": "Wells Fargo",
+  "sector": "Financials",
+  "sub_industry": "Diversified Banks"
+ },
+ "RTX": {
+  "name": "RTX Corporation",
+  "sector": "Industrials",
+  "sub_industry": "Aerospace & Defense"
+ },
+ "ANET": {
+  "name": "Arista Networks",
+  "sector": "Information Technology",
+  "sub_industry": "Communications Equipment"
+ },
+ "CRWD": {
+  "name": "CrowdStrike",
+  "sector": "Information Technology",
+  "sub_industry": "Systems Software"
+ },
+ "GEV": {
+  "name": "GE Vernova",
+  "sector": "Industrials",
+  "sub_industry": "Heavy Electrical Equipment"
+ },
+ "TMO": {
+  "name": "Thermo Fisher Scientific",
+  "sector": "Health Care",
+  "sub_industry": "Life Sciences Tools & Services"
+ },
+ "SNDK": {
+  "name": "Sandisk",
+  "sector": "Information Technology",
+  "sub_industry": "Technology Hardware, Storage & Peripherals"
+ },
+ "TXN": {
+  "name": "Texas Instruments",
+  "sector": "Information Technology",
+  "sub_industry": "Semiconductors"
+ },
+ "IBM": {
+  "name": "IBM",
+  "sector": "Information Technology",
+  "sub_industry": "IT Consulting & Other Services"
+ },
+ "C": {
+  "name": "Citigroup",
+  "sector": "Financials",
+  "sub_industry": "Diversified Banks"
+ },
+ "KLAC": {
+  "name": "KLA Corporation",
+  "sector": "Information Technology",
+  "sub_industry": "Semiconductor Materials & Equipment"
+ },
+ "MRVL": {
+  "name": "Marvell Technology",
+  "sector": "Information Technology",
+  "sub_industry": "Semiconductors"
+ },
+ "LIN": {
+  "name": "Linde plc",
+  "sector": "Materials",
+  "sub_industry": "Industrial Gases"
+ },
+ "AXP": {
+  "name": "American Express",
+  "sector": "Financials",
+  "sub_industry": "Consumer Finance"
+ },
+ "AMGN": {
+  "name": "Amgen",
+  "sector": "Health Care",
+  "sub_industry": "Biotechnology"
+ },
+ "QCOM": {
+  "name": "Qualcomm",
+  "sector": "Information Technology",
+  "sub_industry": "Semiconductors"
+ },
+ "VZ": {
+  "name": "Verizon",
+  "sector": "Communication Services",
+  "sub_industry": "Integrated Telecommunication Services"
+ },
+ "CRM": {
+  "name": "Salesforce",
+  "sector": "Information Technology",
+  "sub_industry": "Application Software"
+ },
+ "APH": {
+  "name": "Amphenol",
+  "sector": "Information Technology",
+  "sub_industry": "Electronic Components"
+ },
+ "GILD": {
+  "name": "Gilead Sciences",
+  "sector": "Health Care",
+  "sub_industry": "Biotechnology"
+ },
+ "DE": {
+  "name": "Deere & Company",
+  "sector": "Industrials",
+  "sub_industry": "Agricultural & Farm Machinery"
+ },
+ "STX": {
+  "name": "Seagate Technology",
+  "sector": "Information Technology",
+  "sub_industry": "Technology Hardware, Storage & Peripherals"
+ },
+ "PEP": {
+  "name": "PepsiCo",
+  "sector": "Consumer Staples",
+  "sub_industry": "Soft Drinks & Non-alcoholic Beverages"
+ },
+ "DIS": {
+  "name": "Walt Disney Company (The)",
+  "sector": "Communication Services",
+  "sub_industry": "Movies & Entertainment"
+ },
+ "SCHW": {
+  "name": "Charles Schwab Corporation",
+  "sector": "Financials",
+  "sub_industry": "Investment Banking & Brokerage"
+ },
+ "TMUS": {
+  "name": "T-Mobile US",
+  "sector": "Communication Services",
+  "sub_industry": "Wireless Telecommunication Services"
+ },
+ "ABT": {
+  "name": "Abbott Laboratories",
+  "sector": "Health Care",
+  "sub_industry": "Health Care Equipment"
+ },
+ "MCD": {
+  "name": "McDonald's",
+  "sector": "Consumer Discretionary",
+  "sub_industry": "Restaurants"
+ },
+ "ADI": {
+  "name": "Analog Devices",
+  "sector": "Information Technology",
+  "sub_industry": "Semiconductors"
+ },
+ "T": {
+  "name": "AT&T",
+  "sector": "Communication Services",
+  "sub_industry": "Integrated Telecommunication Services"
+ },
+ "BLK": {
+  "name": "BlackRock",
+  "sector": "Financials",
+  "sub_industry": "Asset Management & Custody Banks"
+ },
+ "NEE": {
+  "name": "NextEra Energy",
+  "sector": "Utilities",
+  "sub_industry": "Multi-Utilities"
+ },
+ "UNP": {
+  "name": "Union Pacific Corporation",
+  "sector": "Industrials",
+  "sub_industry": "Rail Transportation"
+ },
+ "WELL": {
+  "name": "Welltower",
+  "sector": "Real Estate",
+  "sub_industry": "Health Care REITs"
+ },
+ "COP": {
+  "name": "ConocoPhillips",
+  "sector": "Energy",
+  "sub_industry": "Oil & Gas Exploration & Production"
+ },
+ "ETN": {
+  "name": "Eaton Corporation",
+  "sector": "Industrials",
+  "sub_industry": "Electrical Components & Equipment"
+ },
+ "PFE": {
+  "name": "Pfizer",
+  "sector": "Health Care",
+  "sub_industry": "Pharmaceuticals"
+ },
+ "BA": {
+  "name": "Boeing",
+  "sector": "Industrials",
+  "sub_industry": "Aerospace & Defense"
+ },
+ "WDC": {
+  "name": "Western Digital",
+  "sector": "Information Technology",
+  "sub_industry": "Technology Hardware, Storage & Peripherals"
+ },
+ "IBKR": {
+  "name": "Interactive Brokers",
+  "sector": "Financials",
+  "sub_industry": "Investment Banking & Brokerage"
+ },
+ "BX": {
+  "name": "Blackstone Inc.",
+  "sector": "Financials",
+  "sub_industry": "Asset Management & Custody Banks"
+ },
+ "DHR": {
+  "name": "Danaher Corporation",
+  "sector": "Health Care",
+  "sub_industry": "Life Sciences Tools & Services"
+ },
+ "UBER": {
+  "name": "Uber",
+  "sector": "Industrials",
+  "sub_industry": "Passenger Ground Transportation"
+ },
+ "NOW": {
+  "name": "ServiceNow",
+  "sector": "Information Technology",
+  "sub_industry": "Systems Software"
+ },
+ "TJX": {
+  "name": "TJX Companies",
+  "sector": "Consumer Discretionary",
+  "sub_industry": "Apparel Retail"
+ },
+ "ISRG": {
+  "name": "Intuitive Surgical",
+  "sector": "Health Care",
+  "sub_industry": "Health Care Equipment"
+ },
+ "CB": {
+  "name": "Chubb Limited",
+  "sector": "Financials",
+  "sub_industry": "Property & Casualty Insurance"
+ },
+ "PLD": {
+  "name": "Prologis",
+  "sector": "Real Estate",
+  "sub_industry": "Industrial REITs"
+ },
+ "NEM": {
+  "name": "Newmont",
+  "sector": "Materials",
+  "sub_industry": "Gold"
+ },
+ "VRTX": {
+  "name": "Vertex Pharmaceuticals",
+  "sector": "Health Care",
+  "sub_industry": "Biotechnology"
+ },
+ "BMY": {
+  "name": "Bristol Myers Squibb",
+  "sector": "Health Care",
+  "sub_industry": "Pharmaceuticals"
+ },
+ "BKNG": {
+  "name": "Booking Holdings",
+  "sector": "Consumer Discretionary",
+  "sub_industry": "Hotels, Resorts & Cruise Lines"
+ },
+ "GLW": {
+  "name": "Corning Inc.",
+  "sector": "Information Technology",
+  "sub_industry": "Electronic Components"
+ },
+ "FTNT": {
+  "name": "Fortinet",
+  "sector": "Information Technology",
+  "sub_industry": "Systems Software"
+ },
+ "PGR": {
+  "name": "Progressive Corporation",
+  "sector": "Financials",
+  "sub_industry": "Property & Casualty Insurance"
+ },
+ "LMT": {
+  "name": "Lockheed Martin",
+  "sector": "Industrials",
+  "sub_industry": "Aerospace & Defense"
+ },
+ "COF": {
+  "name": "Capital One",
+  "sector": "Financials",
+  "sub_industry": "Consumer Finance"
+ },
+ "SPGI": {
+  "name": "S&P Global",
+  "sector": "Financials",
+  "sub_industry": "Financial Exchanges & Data"
+ },
+ "VLO": {
+  "name": "Valero Energy",
+  "sector": "Energy",
+  "sub_industry": "Oil & Gas Refining & Marketing"
+ }
+}

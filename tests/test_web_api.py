@@ -31,10 +31,15 @@ def mock_data(monkeypatch):
 def test_index_serves_ui(client):
     res = client.get("/")
     assert res.status_code == 200
+    assert res.headers["x-content-type-options"] == "nosniff"
+    assert res.headers["x-frame-options"] == "DENY"
+    assert "frame-ancestors 'none'" in res.headers["content-security-policy"]
     assert "Portfolio Optimizer" in res.text
     assert "per-ticker-panel" in res.text
     assert "<style>" in res.text
     assert "window.ISIN_TICKER_MAP" in res.text
+    assert 'id="job-progress-events"' in res.text
+    assert "runProgressJob" in res.text
     assert "IE00BFMXXD54" in res.text
     assert "VUAA" in res.text
 
@@ -175,4 +180,189 @@ def test_optimize_error_returns_400(client, mock_data, monkeypatch):
     assert res.status_code == 400
     body = res.json()
     assert "No price data" in body["error"]
-    assert "traceback" in body
+    assert "request_id" in body
+    assert "traceback" not in body
+
+
+def test_select_page_serves_ui(client):
+    res = client.get("/select")
+    assert res.status_code == 200
+    assert "S&amp;P 100 Selection" in res.text
+    assert 'href="/" class="nav-optimizer"' in res.text
+    assert 'href="/select" class="nav-selection active" aria-current="page"' in res.text
+    assert "selection_recursion_limit" in res.text
+    assert "selection_verdict_concurrency" in res.text
+    assert "<style>" in res.text
+    assert "btn-stage-all" in res.text
+    assert 'id="job-progress-events"' in res.text
+    assert "runProgressJob" in res.text
+
+
+def test_index_has_page_nav(client):
+    res = client.get("/")
+    assert 'href="/select" class="nav-selection"' in res.text
+    assert 'class="nav-optimizer active" aria-current="page">Optimizer' in res.text
+
+
+def _assert_js_not_leaked(html: str, markers: list[str]) -> None:
+    import re
+
+    stripped = re.sub(r"<script\b.*?</script>", "", html, flags=re.S)
+    for marker in markers:
+        assert marker not in stripped, f"raw JS leaked into page body: {marker!r}"
+    assert html.count("<script") == html.count("</script>")
+
+
+def test_select_page_js_is_script_wrapped(client):
+    _assert_js_not_leaked(client.get("/select").text, ["applyTheme", "runStage", "escapeHtml"])
+
+
+def test_index_page_js_is_script_wrapped(client):
+    _assert_js_not_leaked(client.get("/").text, ["buildPerTickerRows"])
+
+
+def test_select_run_stage_screen(client, monkeypatch):
+    import models.selection as sel
+    captured = {}
+
+    def fake_run(cfg, stage="all", settings=None, mcp_settings=None, force_refresh=False):
+        captured["stage"] = stage
+        captured["top_n"] = cfg.selection_top_n
+        captured["recursion_limit"] = cfg.selection_recursion_limit
+        captured["concurrency"] = cfg.selection_verdict_concurrency
+        captured["force"] = force_refresh
+        return {"stage": stage, "as_of": "2026-01-01", "screen": {"sectors": [], "names": []},
+                "briefing": None, "sectors": [], "selection": [], "vetoed": [],
+                "from_cache": True, "degraded": {}}
+
+    monkeypatch.setattr(sel, "run_selection", fake_run)
+    res = client.post(
+        "/select/run",
+        data={
+            "stage": "screen",
+            "selection_top_n": "12",
+            "selection_recursion_limit": "180",
+            "selection_verdict_concurrency": "3",
+            "force_refresh": "off",
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["stage"] == "screen"
+    assert captured["top_n"] == 12
+    assert captured["recursion_limit"] == 180
+    assert captured["concurrency"] == 3
+    assert captured["force"] is False
+
+
+def test_select_run_force_refresh_and_defaults(client, monkeypatch):
+    import models.selection as sel
+    captured = {}
+
+    def fake_run(cfg, stage="all", settings=None, mcp_settings=None, force_refresh=False):
+        captured["stage"] = stage
+        captured["force"] = force_refresh
+        return {"stage": stage, "as_of": "x", "screen": {}, "briefing": None,
+                "sectors": [], "selection": [], "vetoed": [], "from_cache": False, "degraded": {}}
+
+    monkeypatch.setattr(sel, "run_selection", fake_run)
+    res = client.post("/select/run", data={"stage": "all", "force_refresh": "on"})
+    assert res.status_code == 200
+    assert captured["stage"] == "all"
+    assert captured["force"] is True
+
+
+def test_select_run_error_returns_400(client, monkeypatch):
+    import models.selection as sel
+
+    def boom(*a, **k):
+        raise ValueError("selection universe missing")
+
+    monkeypatch.setattr(sel, "run_selection", boom)
+    res = client.post("/select/run", data={"stage": "screen"})
+    assert res.status_code == 400
+    body = res.json()
+    assert "selection universe missing" in body["error"]
+    assert "request_id" in body
+    assert "traceback" not in body
+
+
+def _wait_for_progress_job(client, job_id):
+    import time
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        response = client.get(f"/jobs/{job_id}")
+        assert response.status_code == 200
+        job = response.json()
+        if job["status"] != "running":
+            return job
+        time.sleep(0.01)
+    pytest.fail(f"progress job {job_id} did not finish")
+
+
+def test_optimize_progress_job_returns_result(client, mock_data):
+    response = client.post(
+        "/optimize",
+        data={
+            "shares": "AAA,BBB",
+            "w_limits": "0.02,0.9",
+            "monthly_delta": "0",
+            "progress": "on",
+        },
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+
+    job = _wait_for_progress_job(client, job_id)
+
+    assert job["status"] == "completed"
+    assert [weight["ticker"] for weight in job["result"]["weights"]] == ["AAA", "BBB"]
+    assert any(event["tag"] == "pipeline" for event in job["events"])
+
+
+def test_selection_progress_job_captures_incremental_events(client, monkeypatch):
+    import models.selection as sel
+    from core.progress import progress_log
+
+    def fake_run(cfg, stage="all", settings=None, mcp_settings=None, force_refresh=False):
+        progress_log("briefing", "research phase started")
+        return {
+            "stage": stage,
+            "as_of": "2026-01-01",
+            "screen": {"sectors": [], "names": []},
+            "briefing": None,
+            "sectors": [],
+            "selection": [],
+            "vetoed": [],
+            "from_cache": False,
+            "degraded": {},
+        }
+
+    monkeypatch.setattr(sel, "run_selection", fake_run)
+    response = client.post("/select/run", data={"stage": "all", "progress": "on"})
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+
+    job = _wait_for_progress_job(client, job_id)
+
+    assert job["status"] == "completed"
+    assert job["result"]["stage"] == "all"
+    assert any(event["message"] == "research phase started" for event in job["events"])
+    incremental = client.get(f"/jobs/{job_id}", params={"after": 0}).json()
+    assert all(event["sequence"] > 0 for event in incremental["events"])
+
+
+def test_progress_job_reports_failure(client, monkeypatch):
+    import models.selection as sel
+
+    def boom(*a, **k):
+        raise ValueError("selection calculation failed")
+
+    monkeypatch.setattr(sel, "run_selection", boom)
+    response = client.post("/select/run", data={"stage": "screen", "progress": "on"})
+    assert response.status_code == 200
+    job = _wait_for_progress_job(client, response.json()["job_id"])
+
+    assert job["status"] == "failed"
+    assert job["error"] == "selection calculation failed"
+    assert any(event["message"].startswith("Failed:") for event in job["events"])

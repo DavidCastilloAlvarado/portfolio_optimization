@@ -1,6 +1,7 @@
 """Market data access: Yahoo Finance fetch, JustETF fallback, daily CSV caching."""
 
 import json
+import math
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -10,6 +11,7 @@ import requests
 import tqdm
 
 from core.data.cache import read_cache, write_cache
+from core.progress import progress_log
 
 ISIN_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
 
@@ -76,11 +78,22 @@ def fetch_prices(name: str, init_time: int, end_time: int) -> pd.DataFrame:
     closes = result.get("indicators", {}).get("quote", [{}])[0].get("close", [])
     if not timestamps:
         raise ValueError(f"No price data returned for ticker '{name}' — ticker may be invalid or delisted.")
-    dates = [datetime.fromtimestamp(ts, tz=timezone.utc) for ts in timestamps if ts is not None]
+    pairs = []
+    for timestamp, close in zip(timestamps, closes):
+        try:
+            value = float(close)
+        except (TypeError, ValueError):
+            continue
+        if timestamp is None or not math.isfinite(value):
+            continue
+        pairs.append((datetime.fromtimestamp(timestamp, tz=timezone.utc), value))
+    if not pairs:
+        raise ValueError(f"No usable price data returned for ticker '{name}'.")
 
+    dates, values = zip(*pairs)
     return pd.DataFrame({
-        "Date": dates,
-        name.split(".")[0]: closes,
+        "Date": list(dates),
+        name.split(".")[0]: list(values),
     })
 
 
@@ -105,22 +118,55 @@ def fetch_prices_justetf(name: str, init_time: int, end_time: int) -> pd.DataFra
     return pd.DataFrame({"Date": dates, name: values})
 
 
-def load_table(name: str, init_time: int, end_time: int) -> pd.DataFrame:
-    """Load daily close prices for a single symbol, with CSV caching in temp/.
+def _requested_window(init_time: int, end_time: int) -> tuple[pd.Timestamp, pd.Timestamp]:
+    return (
+        pd.Timestamp.fromtimestamp(init_time, tz="UTC").normalize(),
+        pd.Timestamp.fromtimestamp(end_time, tz="UTC").normalize(),
+    )
 
-    Yahoo Finance is the primary source; if it fails and the symbol is an ISIN,
-    fall back to JustETF. Dates are normalized to midnight UTC so tables from
-    different sources can be merged.
-    """
+
+def _cache_covers_window(table: pd.DataFrame, init_time: int, end_time: int) -> bool:
+    if table.empty or "Date" not in table:
+        return False
+    start, end = _requested_window(init_time, end_time)
+    span_days = (end - start).days
+    dates = pd.to_datetime(table["Date"], utc=True).dropna().dt.normalize()
+    if dates.empty:
+        return False
+    if span_days <= 1:
+        return True
+    tolerance = pd.Timedelta(days=4)
+    return dates.min() <= start and dates.max() >= end - tolerance
+
+
+def load_table(name: str, init_time: int, end_time: int) -> pd.DataFrame:
+    """Load daily close prices for a single symbol, with CSV caching in temp/."""
     table = read_cache(name)
+    cached_table = table
+    if table is not None:
+        table["Date"] = pd.to_datetime(table["Date"], utc=True).dt.normalize()
+        if _cache_covers_window(table, init_time, end_time):
+            start, end = _requested_window(init_time, end_time)
+            if (end - start).days > 1:
+                table = table[table["Date"].between(start, end)].copy()
+            print(f"{name}: cache hit ({len(table)} rows)", flush=True)
+        else:
+            table = None
+            print(f"{name}: cache does not cover requested window; refreshing", flush=True)
     if table is None:
         try:
             table = fetch_prices(name, init_time, end_time)
+            print(f"{name}: yahoo fetched ({len(table)} rows)", flush=True)
         except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
-            if not is_isin(name):
+            if cached_table is not None and not is_isin(name):
+                table = cached_table
+                print(f"{name}: using stale cache after refresh failure ({exc})", flush=True)
+            elif not is_isin(name):
                 raise
-            print(f"Yahoo failed for {name} ({exc}); falling back to JustETF")
-            table = fetch_prices_justetf(name, init_time, end_time)
+            else:
+                print(f"Yahoo failed for {name} ({exc}); falling back to JustETF", flush=True)
+                table = fetch_prices_justetf(name, init_time, end_time)
+                print(f"{name}: justetf fetched ({len(table)} rows)", flush=True)
         write_cache(name, table)
     table["Date"] = pd.to_datetime(table["Date"], utc=True).dt.normalize()
     return table
@@ -131,7 +177,7 @@ def bulk_stocks(shares: list, days_back: int) -> pd.DataFrame:
     init_time, end_time = get_unix_time(days_back)
     data = None
     for i, share in tqdm.tqdm(enumerate(shares), total=len(shares)):
-        print(share)
+        progress_log("data", f"loading {share} ({i + 1}/{len(shares)})")
         if i == 0:
             data = load_table(share, init_time, end_time)
         else:
@@ -141,27 +187,32 @@ def bulk_stocks(shares: list, days_back: int) -> pd.DataFrame:
 
 
 def prepare_returns(data: pd.DataFrame, resample: str | None = None) -> tuple:
-    """Sort data by date, interpolate gaps, and compute daily returns.
+    """Clean prices, optionally resample them, and calculate returns."""
+    if "Date" not in data.columns:
+        raise ValueError("price data must contain a Date column")
+    if resample not in (None, "week", "month"):
+        raise ValueError("resample must be None, 'week', or 'month'")
 
-    Args:
-        data:      DataFrame with a 'Date' column and one column per ticker.
-        resample:  None for daily, 'week' or 'month' for aggregated periods.
+    cleaned = data.copy()
+    cleaned["Date"] = pd.to_datetime(cleaned["Date"], utc=True, errors="coerce")
+    cleaned = cleaned.dropna(subset=["Date"]).sort_values("Date")
+    cleaned = cleaned.drop_duplicates(subset=["Date"], keep="last")
+    if cleaned.empty:
+        raise ValueError("price data contains no valid dates")
 
-    Returns:
-        (data, returns) — the cleaned price DataFrame and the returns DataFrame.
-    """
+    price_columns = [column for column in cleaned.columns if column != "Date"]
+    if not price_columns:
+        raise ValueError("price data contains no asset columns")
+    indexed = cleaned.set_index("Date")[price_columns]
     if resample == "week":
-        data["step"] = data.Date.apply(
-            lambda x: f"{x.isocalendar()[1]}-{x.isocalendar()[0]}-{x.month}"
-        )
-        data = data.groupby("step").last()
+        indexed = indexed.resample("W").last()
     elif resample == "month":
-        data["step"] = data.Date.apply(
-            lambda x: f"{x.isocalendar()[0]}-{x.month}"
-        )
-        data = data.groupby("step").last()
+        indexed = indexed.resample("ME").last()
+    indexed = indexed.dropna(how="all")
+    indexed = indexed.interpolate(method="time", limit_direction="both")
+    if indexed.empty:
+        raise ValueError("price data contains no usable observations")
 
-    data = data.sort_values("Date", ascending=False).set_index("Date")
-    data.interpolate(method="time", limit_direction="backward", inplace=True)
-    returns = data.pct_change(periods=-1)
-    return data, returns
+    prices = indexed.sort_index(ascending=False)
+    returns = prices.pct_change(periods=-1)
+    return prices, returns

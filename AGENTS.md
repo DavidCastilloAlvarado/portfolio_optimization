@@ -19,7 +19,8 @@ A Python portfolio optimization engine using Modern Portfolio Theory with four s
 
 ```
 portfolio_optimization/
-├── main.py                 # CLI entry point
+├── main.py                 # CLI entry point (optimizer)
+├── select.py               # CLI entry point (S&P 100 selection)
 ├── pyproject.toml          # Dependencies + poe tasks
 ├── README.md
 ├── .env                    # Local LLM/MCP values (gitignored; template: .env.example)
@@ -29,12 +30,15 @@ portfolio_optimization/
 │   ├── __init__.py
 │   ├── defaults.py         # Config dataclass (all tunable parameters)
 │   ├── llm.py              # LLMSettings — LLM endpoint from env vars (LLM_BASE_URL, LLM_MODEL, ...)
-│   └── isin_ticker_map.json  # ISIN → display ticker map (user-editable JSON, no code)
+│   ├── isin_ticker_map.json  # ISIN → display ticker map (user-editable JSON, no code)
+│   └── sp100.json          # S&P 100 universe (user-editable JSON: ticker → name/sector/sub_industry)
 ├── core/                   # Domain layer
 │   ├── pipeline.py         # Shared data → optimize → backtest flow (run_pipeline)
+│   ├── selection.py        # S&P 100 quant funnel (metrics, scoring, sectors, dedup, daily screen cache)
 │   ├── data/
 │   │   ├── cache.py        # Daily CSV cache in temp/
-│   │   └── loader.py       # Yahoo fetch + JustETF fallback, return preparation
+│   │   ├── loader.py       # Yahoo fetch + JustETF fallback, return preparation
+│   │   └── quotes.py       # Yahoo v7 batch quotes (cookie+crumb session) + v10 fundamentals
 │   ├── optimization/
 │   │   ├── portfolio.py    # Portfolio mean / variance math
 │   │   ├── bounds.py       # Weight-bound resolution (global + per-ticker)
@@ -46,15 +50,19 @@ portfolio_optimization/
 │   ├── blm.py              # LLM-Black-Litterman: prior, posterior, view engines dispatch + daily cache
 │   ├── llm_agent.py        # Research-agent view engine: LangGraph agent + web-search MCP + JSON contract
 │   ├── llm_client.py       # OpenAI-compatible chat-completions HTTP client (requests)
-│   └── blitterman.py       # Legacy Black-Litterman + market cap utilities (not used by the llm_bl strategy)
+│   ├── blitterman.py       # Legacy Black-Litterman + market cap utilities (not used by the llm_bl strategy)
+│   ├── selection_agents.py # Selection LLM agents: market briefing + per-name verdicts (MCP protocol)
+│   └── selection.py        # Selection orchestrator: blend, hard gates, degradation
 ├── web/                    # Presentation layer
 │   ├── __init__.py
-│   ├── main.py             # FastAPI endpoints
+│   ├── main.py             # FastAPI endpoints (/, /optimize, /select, /select/run)
 │   ├── renderer.py         # Result building helpers
 │   └── static/
-│       ├── index.html
+│       ├── index.html      # Optimizer page (nav header: Optimizer | Selection)
+│       ├── select.html     # Selection page (staged run + results tables)
 │       ├── styles.css
-│       └── app.js
+│       ├── app.js          # Optimizer logic (prefills ?shares=... from Selection)
+│       └── select.js       # Selection logic (staged fetch + render)
 └── tests/
     ├── __init__.py
     ├── conftest.py         # Shared fixtures
@@ -68,7 +76,10 @@ portfolio_optimization/
     ├── test_config.py      # Config dataclass
     ├── test_web_api.py     # FastAPI endpoints (mocked data)
     ├── test_llm_client.py  # OpenAI-compatible client (mocked HTTP)
-    └── test_blm.py         # Black-Litterman math, view parsing, cache, thinking handling (mocked LLM)
+    ├── test_blm.py         # Black-Litterman math, view parsing, cache, thinking handling (mocked LLM)
+    ├── test_selection.py   # Quant funnel + orchestrator blend/gates (mocked data/agents)
+    ├── test_market_agent.py# Briefing/verdict agents (FakeAdapter, like test_llm_agent.py)
+    └── test_quotes.py      # Crumb session + batch quotes + v10 fundamentals (mocked HTTP)
 ```
 
 ## Commands
@@ -80,11 +91,19 @@ poetry install
 # Run CLI
 poetry run poe opt
 
+# Run S&P 100 selection (CLI)
+poetry run poe select                  # full funnel
+poetry run poe select --stage screen   # quant only, fast
+
 # Run web UI
 poetry run poe web
 
 # Run tests
 poetry run poe test
+
+# MANDATORY after any web/static or page-endpoint change: visual UI
+# verification in a real browser (Playwright) + inspect the screenshots
+poetry run poe verify-ui
 ```
 
 ## Development Conventions
@@ -130,6 +149,46 @@ poetry run poe test
 - `web/renderer.py` — builds result dicts from optimizer output
 - Static files injected inline (HTML replaces `__CSS__` and `__JS__` placeholders)
 - Form data parsed via `Config.from_dict()`
+
+### UI work — MANDATORY visual verification (Playwright)
+Any change touching `web/static/*` (HTML/CSS/JS) or the `web/main.py` page
+endpoints **must** be verified in a real browser before the task is declared
+done. curl/endpoint tests are NOT sufficient — they cannot catch markup or
+injection errors (real incident: `select.html` shipped its `__JS__`
+placeholder outside a `<script>` tag, so the endpoint injected raw JavaScript
+into the page body and the whole page rendered as visible code).
+
+Procedure:
+1. `poetry run poe verify-ui` — `scripts/verify_ui.py` boots the app on a free
+   port, drives a real browser via Playwright (system Chrome at
+   `/usr/bin/google-chrome` when present, else bundled chromium), and checks
+   both pages: no uncaught JS errors, no raw script/CSS text leaked into the
+   page, key elements present, and the quant-screen stage actually renders
+   11 sector rows after a real button click. It then boots the hermetic
+   fixture app (`tests/fixture_app.py` — real pages/endpoints, deterministic
+   synthetic prices, no network, no LLM) and drives the optimizer end-to-end
+   in the browser for every non-LLM strategy: the form must pass native
+   constraint validation (an invalid *hidden* control silently blocks submit
+   before the JS handler runs — real incident: `llm_tau` had `step="0.0005"`
+   but a default of `0.0385`, off the step grid, so clicking Run did nothing
+   for sharpe/min_variance/kelly while the row was hidden), the click must
+   actually fire a completed `POST /optimize` (200), and the results section
+   must render the strategy's label with a populated weights table.
+2. **Inspect the screenshots it writes** (`temp/ui_verify_index.png`,
+   `temp/ui_verify_select.png`, `temp/ui_verify_select_screened.png`,
+   `temp/ui_verify_strategy_sharpe.png`,
+   `temp/ui_verify_strategy_min_variance.png`,
+   `temp/ui_verify_strategy_kelly.png`) —
+   reading the images is part of the task, not optional. A green exit code
+   alone is not enough.
+3. Only then report the UI work as done.
+
+`web/static/index.html` keeps `step="any"` on the `llm_tau` input on purpose —
+never reintroduce a numeric `step` whose grid excludes the default value, or
+the optimizer form silently stops submitting for every non-LLM strategy.
+
+`playwright` is a dev dependency; if the bundled browser is ever needed:
+`playwright install chromium`.
 
 ### Simulation/Backtest
 - `core/simulation/backtest.py::run_backtest` uses real historical prices from the CSV cache (via `read_prices`), not random data
@@ -199,6 +258,15 @@ consistent, regardless of `cfg.resample`.
 - **Views**: for each asset, the LLM is sampled `llm_samples` times; view
   `q` = sample mean, `Ω_ii` = sample variance (of the *forecast distribution*,
   not the asset's own history).
+- **Per-sample prompt marker**: each of the `llm_samples` draws ships a
+  *distinct* user prompt — `This is the sample {k} of {n}. …` as its **first
+  line** (`models/blm.py::_sample_marker`, used by `_build_prompt` and
+  `models/llm_agent.py::build_user_prompt`). The marker goes first on purpose:
+  every sample previously sent a byte-identical prompt, so the provider's
+  prompt/prefix cache served samples 2..K with the same cached prefix and the
+  "independent" draws collapsed onto one cached reasoning path (Ω ≈ floor).
+  Prefix caching matches the longest identical prefix, so a trailing marker
+  would leave the whole prompt cacheable.
 - **Posterior**: `μ_BL = [ (τΣ)⁻¹ + P'Ω⁻¹P ]⁻¹ [ (τΣ)⁻¹π + P'Ω⁻¹q ]`,
   solved with a `pinv` fallback (1e-10 regularization) for ill-conditioning.
 
@@ -273,8 +341,10 @@ sources, confidence) — stored in the daily cache and surfaced in UI/CLI.
   the run falls back to the **pure equilibrium prior** (`degraded=True`) and the
   pipeline still returns weights.
 - **Daily view cache**: `llm_views_{sha1-12}_{YYYY-MM-DD}.json` in `temp/`, keyed
-  by model|engine|effort|websearch|samples|tau|prior|horizon|history|names
-  (engine-aware so agent and direct views never cross-reuse). Same-day re-runs
+  by model|prompt-version|engine|effort|websearch|samples|tau|prior|horizon|history|names
+  (engine-aware so agent and direct views never cross-reuse; the
+  `prompt{VIEW_PROMPT_VERSION}` tag invalidates views produced by an older
+  prompt shape). Same-day re-runs
   reuse views (zero extra API cost). Tests monkeypatch `core.data.cache.CACHE_DIR`.
 - **Fixed τ** (no validation grid search) — honest for live use.
 - **Per-asset sampling is sequential** (gentle on the local 27B model).
@@ -331,3 +401,113 @@ always take precedence over `.env`. No machine-specific values exist in code:
   top sources when present).
 - The strategy label is `"Black-Litterman Optimization (LLM views)"`, or
   `"(equilibrium fallback)"` when degraded.
+
+## S&P 100 Selection (which names to include)
+
+Additive feature: the optimizer decides *how much* of each asset; selection
+decides *which* tickers of the S&P 100 deserve a seat. Separate web page
+(`GET /select`), separate CLI (`select.py`, `poe select`), its own caches.
+The optimizer page is untouched; "Send to Optimizer" navigates to
+`/?shares=A,B,C` which `app.js` pre-fills into the asset list.
+
+### Files
+- `config/sp100.json` — user-editable universe: `{"TICKER": {"name", "sector", "sub_industry"}}`
+  (100 names, sorted by market cap; sectors must be GICS names — `load_universe`
+  validates and raises with the file path on unknown sectors).
+- `core/data/quotes.py` — Yahoo v7 **batch** quotes need the cookie+crumb flow:
+  `get_crumb_session()` (GET `https://fc.yahoo.com` for the cookie, 404 expected,
+  then GET `query1.finance.yahoo.com/v1/test/getcrumb` → crumb text) and
+  `fetch_batch_quotes()` (chunks of 60 symbols, 0.3 s sleep). `fetch_fundamentals()`
+  is per-symbol v10 `quoteSummary?modules=financialData` because the v7 quote
+  endpoint returns **null** for growth/margins/eps on most tickers (verified
+  live); v10 reliably returns `profitMargins`, `revenueGrowth`, `earningsGrowth`.
+  A positive `profitMargins` is treated as the "positive earnings" signal in
+  quality scoring (v7 `epsTrailingTwelveMonths` is degraded to null).
+- `core/selection.py` — the quant funnel, no LLM: `load_universe` →
+  `load_universe_prices` (own single-file daily cache `temp/selection_prices_{date}.csv`
+  with `{T}` + `{T}_volume` columns — deliberately NOT the shared per-ticker
+  loader cache, which stores closes only) → `compute_name_metrics`
+  (ret_1m/3m/6m, off_high_52w, max_dd_3m, vol_3m, above_ma50, rel_volume) →
+  `score_universe` (percentile ranks; `finance = 0.75·momentum + 0.25·quality`,
+  quality = 0 without positive earnings) → `sector_scores`
+  (`quant_score = 0.6·member ret_3m percentile mean + 0.4·breadth`) →
+  `_dedup_near_duplicates` (126d return correlation ≥ 0.95 in the same
+  sub-industry → keep the higher market cap; handles GOOG/GOOGL) → `run_screen`
+  (daily cache `temp/selection_screen_{date}.json`, `force_refresh` bypasses).
+- `models/selection_agents.py` — the two LLM agents, on the same LangChain
+  `create_agent` + MCP protocol as `models/llm_agent.py` (shared MCP session,
+  `AGENT_SAMPLE_TIMEOUT_S`, one retry, sync facade via `asyncio.run`, strict
+  Pydantic contracts):
+  - **Market briefing** — `BRIEFING_DIRECTIVE`: step 0 `load_briefing` (daily
+    memo `temp/selection_briefing_{date}.md`), then 10–18 web searches across
+    MACRO (rates/inflation/labor, ≥2), GEOPOLITICS (war/sanctions/energy,
+    ≥1-2), TECH/AI industry (≥2), EACH candidate sector (≥2), SENTIMENT (VIX/
+    breadth, ≥1); memo saved via `save_briefing` BEFORE the contract. Returns
+    `MarketBriefing` (regime summary, macro risks, themes, overall risk 0-1,
+    per-sector `SectorView`: trend_score, regime, driver, fragility, conviction).
+  - **Name verdict** — reuses the SHARED per-ticker BL research memo protocol
+    (`load_research`/`save_research` imported from `models.llm_agent`): a memo
+    written by either feature is reused by the other. 2-5 targeted searches
+    only when no memo exists; returns `SelectionVerdict` (include, conviction,
+    thesis, catalysts, overhangs, earnings_in_days). One MCP session for the
+    whole candidate list; per-name failure skips that name.
+  - Both agents build their LLM via `build_llm` but with
+    `_selection_llm_settings()` overriding the per-request timeout to
+    `SELECTION_LLM_TIMEOUT_S` (600 s): their context accumulates fetched
+    articles, so one reasoning step on the local model can exceed the default
+    120 s request timeout (verified live: a 24-min briefing run died on a 120 s
+    request timeout). The overall per-agent-call cap
+    (`AGENT_SAMPLE_TIMEOUT_S`) still bounds the run.
+  - **Full research pass-through export**: the agent result carries the entire
+    conversation in `result["messages"]` (system directive, prompt, every tool
+    call with its exact query, every tool result with the full fetched-article
+    text, final answer). `_dump_transcript()` writes it verbatim as markdown to
+    `temp/selection_trace_briefing_{date}.md` (once per briefing run) and
+    `temp/selection_trace_verdict_{TICKER}_{date}.md` (per name) after each
+    successful agent call — this is the audit trail of the whole research
+    process, including every search and every article body.
+- `models/selection.py` — orchestrator `run_selection(cfg, stage)` with stages
+  `screen` | `briefing` | `verdicts` | `all`. Blend + hard gates:
+  - `sector_final = w·quant + (1-w)·trend_score·(1 - 0.5·fragility)`
+    (w = `selection_sector_quant_weight`, default 0.6)
+  - `name_final = (1-v)·finance + v·conviction` (v = `selection_name_llm_weight`,
+    default 0.5)
+  - Gates: sector must be in the top 3 blended sectors; `include=false` vetoes
+    the name (reported in `vetoed`); earnings within `selection_event_risk_days`
+    (default 5) flag the name (kept, marked).
+  - Degradation mirrors BL: briefing fails → `degraded["briefing"]`, sectors
+    stay quant; verdicts fail → `degraded["verdicts"]`, names stay quant-only.
+  - Caches: briefing JSON `temp/selection_briefing_{key}_{date}.json` where
+    `key = sha1(sorted(candidates))[:8]` (`_briefing_key`) — the contract is
+    candidate-specific (one SectorView per candidate), so the key stops a
+    partial-candidate run from silently overwriting/shadowing a full one
+    (real incident: a 3-sector verification run clobbered the 8-sector
+    briefing and the next funnel ran with a degraded top-3). The memo
+    `.md` stays per-day (general market notes, shared across candidate sets).
+    Per-name `temp/selection_verdict_{TICKER}_{date}.json` (checked per name,
+    so a partial re-run only pays for the missing names).
+
+### Config (`selection_*` in `config/defaults.py`)
+`selection_top_n` (10, clamp 8–16 — user: no fixed count, no ETFs),
+`selection_sector_quant_weight` (0.6), `selection_name_llm_weight` (0.5),
+`selection_event_risk_days` (5), `selection_recursion_limit` (80, clamp 20–200;
+the briefing agent does ~10-18 tool calls).
+
+### Web
+- `GET /select` serves `select.html` (same `__CSS__`/`__JS__` inline injection;
+  fresh server start required after static changes). `POST /select/run`
+  (Form: `stage`, `selection_top_n`, `force_refresh`) is a **sync** `def` like
+  `/optimize` (threadpool → agent asyncio loop). Both pages share a
+  `page-nav` header (Optimizer | Selection, active highlight).
+- `select.js` runs stages with spinner text (the briefing stage warns it takes
+  10-20 min on the local model), renders the briefing card, the sector table
+  (quant + LLM columns, top-3 marked), the selection table (thesis, overhangs,
+  earnings flags, vetoed chips), and "Send to Optimizer" → `/?shares=...`.
+
+### Testing seams
+- `core.selection.load_universe_prices` / `core.data.quotes.fetch_batch_quotes` /
+  `fetch_fundamentals` monkeypatched; `core.data.cache.CACHE_DIR` → `tmp_path`.
+- `models.selection_agents.MCPAdapter`/`create_agent`/`build_llm` mocked with the
+  `FakeAdapter` + `FakeAgent` pattern of `tests/test_llm_agent.py` (never spawn npx).
+- Orchestrator: monkeypatch `core.selection.run_screen`,
+  `models.selection.run_market_briefing`, `models.selection.run_name_verdicts`.

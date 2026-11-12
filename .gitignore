@@ -1,7 +1,14 @@
 *.csv
 *.txt
 *.ipynb**
-__pycache__
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+build/
+dist/
+*.egg-info/
 !requirements.txt
 doc/
 temp/

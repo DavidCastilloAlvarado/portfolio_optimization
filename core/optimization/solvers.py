@@ -9,16 +9,35 @@ from core.optimization.portfolio import port_mean_var
 
 
 def _asset_bounds(w_limits, n: int) -> list:
-    """Normalize bounds: a list of n (min, max) pairs, or a single tuple broadcast to all assets."""
-    if isinstance(w_limits, list) and len(w_limits) == n:
-        return [tuple(b) for b in w_limits]
+    """Normalize bounds: per-asset pairs or one pair broadcast to all assets."""
+    if isinstance(w_limits, list) and len(w_limits) == n and all(
+        isinstance(bound, (list, tuple, np.ndarray)) and len(bound) == 2
+        for bound in w_limits
+    ):
+        return [tuple(bound) for bound in w_limits]
+    if not isinstance(w_limits, (list, tuple, np.ndarray)) or len(w_limits) != 2:
+        raise ValueError("weight limits must be a (min, max) pair or one pair per asset")
     return [tuple(w_limits)] * n
+
+
+def _validate_bounds(bounds: list) -> None:
+    if not bounds:
+        raise ValueError("at least one asset is required")
+    for i, bound in enumerate(bounds):
+        if len(bound) != 2:
+            raise ValueError(f"weight bounds for asset {i} must contain min and max")
+        lo, hi = (float(bound[0]), float(bound[1]))
+        if not np.isfinite(lo) or not np.isfinite(hi) or lo < 0 or hi > 1 or lo > hi:
+            raise ValueError(
+                f"invalid weight bounds for asset {i}: expected 0 <= min <= max <= 1"
+            )
 
 
 def _assert_bounds_feasible(bounds: list) -> None:
     """Weights must sum to 1: the bounds must leave a non-empty feasible set."""
-    lo = sum(b[0] for b in bounds)
-    hi = sum(b[1] for b in bounds)
+    _validate_bounds(bounds)
+    lo = sum(float(b[0]) for b in bounds)
+    hi = sum(float(b[1]) for b in bounds)
     if hi < 1.0 - 1e-9:
         raise ValueError(
             f"weight bounds infeasible: with {len(bounds)} assets the max weights sum to "
@@ -28,6 +47,43 @@ def _assert_bounds_feasible(bounds: list) -> None:
         raise ValueError(
             f"weight bounds infeasible: the min weights sum to {lo:.2f} > 1.0 — lower the min weight"
         )
+
+
+def _validate_covariance(cov_returns: np.ndarray, n: int) -> np.ndarray:
+    cov = np.asarray(cov_returns, dtype=float)
+    if cov.shape != (n, n):
+        raise ValueError(f"covariance matrix must have shape ({n}, {n})")
+    if not np.all(np.isfinite(cov)):
+        raise ValueError("covariance matrix must contain only finite values")
+    cov = (cov + cov.T) / 2.0
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    if eigenvalues[0] < -1e-8:
+        raise ValueError("covariance matrix must be positive semidefinite")
+    return eigenvectors @ np.diag(np.maximum(eigenvalues, 1e-12)) @ eigenvectors.T
+
+
+def _feasible_start(bounds: list) -> np.ndarray:
+    lower = np.array([float(b[0]) for b in bounds])
+    upper = np.array([float(b[1]) for b in bounds])
+    weights = lower.copy()
+    remaining = 1.0 - float(weights.sum())
+    for i in range(len(weights)):
+        amount = min(remaining, upper[i] - weights[i])
+        weights[i] += amount
+        remaining -= amount
+    if remaining > 1e-9:
+        raise ValueError("weight bounds do not leave a feasible portfolio")
+    return weights
+
+
+def _validate_solution(weights: np.ndarray, bounds: list) -> np.ndarray:
+    weights = np.asarray(weights, dtype=float).reshape(-1)
+    if not np.all(np.isfinite(weights)) or abs(float(weights.sum()) - 1.0) > 1e-6:
+        raise RuntimeError("optimizer returned invalid portfolio weights")
+    for weight, (lo, hi) in zip(weights, bounds):
+        if weight < float(lo) - 1e-6 or weight > float(hi) + 1e-6:
+            raise RuntimeError("optimizer returned weights outside the requested bounds")
+    return weights
 
 
 def solve_mean_variance(
@@ -48,14 +104,23 @@ def solve_mean_variance(
     Returns:
         weights: Optimized portfolio weights.
     """
+    mean_returns = np.asarray(mean_returns, dtype=float).reshape(-1)
+    n = len(mean_returns)
+    if n == 0 or not np.all(np.isfinite(mean_returns)):
+        raise ValueError("mean returns must be a non-empty finite vector")
+    cov_returns = _validate_covariance(cov_returns, n)
+    bounds = _asset_bounds(w_limits, n)
+    _assert_bounds_feasible(bounds)
+
     def fitness(W: np.ndarray, R: np.ndarray, C: np.ndarray, rf_val: float) -> float:
         mean, var = port_mean_var(W, R, C)
-        sharpe = (mean - rf_val) / np.sqrt(var)
-        return 1.0 / sharpe  # minimize inverse Sharpe
+        if not np.isfinite(mean) or not np.isfinite(var) or var < 0:
+            return 1e12
+        if var <= 1e-15:
+            return -1e6 if mean > rf_val else 1e6
+        return -(mean - rf_val) / np.sqrt(var)
 
-    n = len(mean_returns)
-    W0 = np.ones(n) / n
-    bounds = _asset_bounds(w_limits, n)
+    W0 = _feasible_start(bounds)
     constraints = {"type": "eq", "fun": lambda W: np.sum(W) - 1.0}
 
     result = scipy.optimize.minimize(
@@ -64,7 +129,7 @@ def solve_mean_variance(
     )
     if not result.success:
         raise RuntimeError(result.message)
-    return result.x
+    return _validate_solution(result.x, bounds)
 
 
 def solve_min_variance(
@@ -85,10 +150,14 @@ def solve_min_variance(
     """
     cvxopt_options["show_progress"] = False
 
+    if n_assets <= 0:
+        raise ValueError("at least one asset is required")
     bounds = _asset_bounds(w_limits, n_assets)
+    _assert_bounds_feasible(bounds)
+    cov_returns = _validate_covariance(cov_returns, n_assets)
     low_up_bound = [-b[0] for b in bounds] + [b[1] for b in bounds]
 
-    P = matrix(np.array(cov_returns, dtype=float))
+    P = matrix(cov_returns)
     q = matrix(0.0, (n_assets, 1))
     G = matrix(np.append(
         np.diag([-1.0] * n_assets),
@@ -98,8 +167,13 @@ def solve_min_variance(
     A = matrix(1.0, (1, n_assets))
     b = matrix(1.0)
 
-    sol = qp(P, q, G, h, A, b)
-    return np.array(sol["x"]).flatten()
+    try:
+        sol = qp(P, q, G, h, A, b)
+    except Exception as exc:
+        raise RuntimeError(f"minimal variance optimization failed: {exc}") from exc
+    if sol.get("status") != "optimal":
+        raise RuntimeError(f"minimal variance optimization failed: {sol.get('status')}")
+    return _validate_solution(np.array(sol["x"]).flatten(), bounds)
 
 
 def solve_kelly_growth(
@@ -127,14 +201,19 @@ def solve_kelly_growth(
     """
     cvxopt_options["show_progress"] = False
 
+    mean_returns = np.asarray(mean_returns, dtype=float).reshape(-1)
     n = len(mean_returns)
+    if n == 0 or not np.all(np.isfinite(mean_returns)):
+        raise ValueError("mean returns must be a non-empty finite vector")
     lam = min(max(kelly_fraction, 0.01), 1.0)
 
     bounds = _asset_bounds(w_limits, n)
+    _assert_bounds_feasible(bounds)
+    cov_returns = _validate_covariance(cov_returns, n)
     low_up_bound = [-b[0] for b in bounds] + [b[1] for b in bounds]
 
-    P = matrix((1.0 / lam) * np.array(cov_returns, dtype=float))
-    q = matrix(-np.array(mean_returns, dtype=float).reshape(n, 1))
+    P = matrix((1.0 / lam) * cov_returns)
+    q = matrix(-mean_returns.reshape(n, 1))
     G = matrix(np.append(
         np.diag([-1.0] * n),
         np.diag([1.0] * n), 0,
@@ -146,7 +225,7 @@ def solve_kelly_growth(
     sol = qp(P, q, G, h, A, b)
     if sol["status"] != "optimal":
         raise RuntimeError(f"Kelly growth optimization failed: {sol['status']}")
-    return np.array(sol["x"]).flatten()
+    return _validate_solution(np.array(sol["x"]).flatten(), bounds)
 
 
 def optimize(
@@ -173,17 +252,22 @@ def optimize(
     Returns:
         (weights, mean, std, strategy_name)
     """
+    mean_returns = np.asarray(mean_returns, dtype=float).reshape(-1)
     n = len(mean_returns)
-    _assert_bounds_feasible(_asset_bounds(w_limits, n))
+    if n == 0 or not np.all(np.isfinite(mean_returns)):
+        raise ValueError("mean returns must be a non-empty finite vector")
+    cov_returns = _validate_covariance(cov_returns, n)
+    bounds = _asset_bounds(w_limits, n)
+    _assert_bounds_feasible(bounds)
 
     if strategy == "kelly":
-        weights = solve_kelly_growth(mean_returns, cov_returns, kelly_fraction, w_limits)
+        weights = solve_kelly_growth(mean_returns, cov_returns, kelly_fraction, bounds)
         strategy_name = f"Growth Optimization (Kelly {round(kelly_fraction * 100)}%)"
     elif strategy == "min_variance" or min_variance:
-        weights = solve_min_variance(cov_returns, w_limits, n)
+        weights = solve_min_variance(cov_returns, bounds, n)
         strategy_name = "Minimal Variance Optimization"
     else:
-        weights = solve_mean_variance(mean_returns, cov_returns, rf, w_limits)
+        weights = solve_mean_variance(mean_returns, cov_returns, rf, bounds)
         strategy_name = "Mean-Variance Optimization (historical)"
 
     mean, var = port_mean_var(weights, mean_returns, cov_returns)

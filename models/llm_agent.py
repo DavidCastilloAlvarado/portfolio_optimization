@@ -14,6 +14,7 @@ history-only sampler.
 """
 
 import asyncio
+import time
 import warnings
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,7 @@ import numpy as np
 import pandas as pd
 from langchain.agents import create_agent
 from langchain.tools import tool
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
@@ -32,6 +34,8 @@ with warnings.catch_warnings():
 import core.data.cache as price_cache
 from config.defaults import Config
 from config.llm import LLMSettings, WebSearchMCPSettings
+from core.progress import elapsed as _elapsed
+from core.progress import progress_log
 from models.blm import (
     MAX_PLAUSIBLE_DAILY_PCT,
     MIN_HISTORY_OBS,
@@ -39,6 +43,7 @@ from models.blm import (
     VIEW_TEMPERATURE,
     _read_cached_views,
     _sample_asset_direct,
+    _sample_marker,
     _views_cache_path,
     _write_cached_views,
 )
@@ -103,6 +108,32 @@ def save_research(ticker: str, notes: str) -> str:
     return f"Saved {len(notes)} chars of research for {ticker.upper()} to {path.name}."
 
 
+class _TurnLogger(BaseCallbackHandler):
+    def __init__(self, tag: str) -> None:
+        self.tag = tag
+        self.t0 = time.monotonic()
+        self.turns = 0
+        self.tools = 0
+
+    def on_llm_end(self, response, **kwargs) -> None:
+        self.turns += 1
+        progress_log(self.tag, f"llm turn {self.turns} done (+{_elapsed(self.t0)})")
+
+    def on_tool_start(self, serialized, input_str, **kwargs) -> None:
+        self.tools += 1
+        name = (serialized or {}).get("name") or kwargs.get("name") or "tool"
+        arg = (input_str or "").replace("\n", " ")[:220]
+        progress_log(self.tag, f"tool #{self.tools} {name} :: {arg}")
+
+    def on_tool_end(self, output, **kwargs) -> None:
+        name = kwargs.get("name") or "tool"
+        progress_log(self.tag, f"tool_result {name} ({len(str(output or ''))} chars)")
+
+    def on_tool_error(self, error, **kwargs) -> None:
+        name = kwargs.get("name") or "tool"
+        progress_log(self.tag, f"tool_error {name} :: {str(error)[:160]}")
+
+
 class ViewContract(BaseModel):
     predicted_avg_daily_return_pct: float = Field(
         description=(
@@ -127,9 +158,16 @@ def build_llm(cfg: Config, settings: LLMSettings) -> ChatOpenAI:
     )
 
 
-def build_user_prompt(name: str, cfg: Config, history_pct: np.ndarray) -> str:
+def build_user_prompt(
+    name: str,
+    cfg: Config,
+    history_pct: np.ndarray,
+    sample_index: int | None = None,
+) -> str:
     hist = ", ".join(f"{v:.2f}" for v in history_pct)
+    marker = "" if sample_index is None else _sample_marker(sample_index, cfg.llm_samples) + "\n"
     return (
+        f"{marker}"
         f"Asset: {name}\n"
         f"Today: {_today_iso()}\n"
         f"Past {len(history_pct)} daily returns, percent per day, oldest first: [{hist}]\n"
@@ -140,11 +178,16 @@ def build_user_prompt(name: str, cfg: Config, history_pct: np.ndarray) -> str:
     )
 
 
-async def _run_agent_sample(agent, prompt: str, recursion_limit: int) -> ViewContract:
+async def _run_agent_sample(agent, prompt: str, recursion_limit: int, tag: str) -> ViewContract:
+    logger = _TurnLogger(tag)
     result = await asyncio.wait_for(
-        agent.ainvoke({"messages": prompt}, config={"recursion_limit": recursion_limit}),
+        agent.ainvoke(
+            {"messages": prompt},
+            config={"recursion_limit": recursion_limit, "callbacks": [logger]},
+        ),
         timeout=AGENT_SAMPLE_TIMEOUT_S,
     )
+    progress_log(tag, f"agent finished ({logger.tools} tool calls, {logger.turns} turns, +{_elapsed(logger.t0)})")
     return result["structured_response"]
 
 
@@ -164,27 +207,37 @@ async def _generate_agent_views_async(
     views: dict = {}
     async with MCPAdapter(mcp_settings.mcp_target()) as adapter:
         tools = [*await adapter.list_tools(), load_research, save_research]
+        progress_log("views", f"MCP ready: {len(tools)} tools ([{', '.join(getattr(t, 'name', str(t)) for t in tools)}])")
         for j, name in enumerate(names):
             series = returns_asc[name].dropna()
             if len(series) < MIN_HISTORY_OBS:
                 continue
             history_pct = series.tail(cfg.blm_history_days).to_numpy(dtype=float) * 100.0
-            prompt = build_user_prompt(name, cfg, history_pct)
+            memo = research_cache_path(name)
+            memo_note = f"memo {memo.stat().st_size / 1024:.1f}KB (reuse)" if memo.exists() else "no memo (fresh research)"
+            progress_log("views", f"asset {j + 1}/{len(names)}: {name} | history {len(history_pct)}d | {memo_note} | {cfg.llm_samples} samples")
             agent = create_agent(llm, tools, system_prompt=SYSTEM_DIRECTIVE, response_format=ViewContract)
 
             samples: list[float] = []
             details: list[dict] = []
-            for _ in range(cfg.llm_samples):
+            for k in range(cfg.llm_samples):
+                t0 = time.monotonic()
+                tag = f"views {name}"
+                prompt = build_user_prompt(name, cfg, history_pct, sample_index=k + 1)
                 try:
-                    contract = await _run_agent_sample(agent, prompt, cfg.llm_agent_recursion_limit)
+                    contract = await _run_agent_sample(agent, prompt, cfg.llm_agent_recursion_limit, tag=tag)
                 except Exception:
+                    progress_log("views", f"{name} sample {k + 1}/{cfg.llm_samples} FAILED (+{_elapsed(t0)}) — retry 1")
                     try:
-                        contract = await _run_agent_sample(agent, prompt, cfg.llm_agent_recursion_limit)
+                        contract = await _run_agent_sample(agent, prompt, cfg.llm_agent_recursion_limit, tag=tag)
                     except Exception:
+                        progress_log("views", f"{name} sample {k + 1}/{cfg.llm_samples} FAILED on retry — stopping sampling")
                         break
                 value = float(contract.predicted_avg_daily_return_pct)
                 if not np.isfinite(value) or abs(value) > MAX_PLAUSIBLE_DAILY_PCT:
+                    progress_log("views", f"{name} sample {k + 1}/{cfg.llm_samples}: implausible value {value} — rejected")
                     continue
+                progress_log("views", f"{name} sample {k + 1}/{cfg.llm_samples} ok: {value:+.3f}%/day conf={contract.confidence:.2f} (+{_elapsed(t0)})")
                 samples.append(value / 100.0)
                 details.append({
                     "rationale": contract.rationale,
@@ -192,6 +245,7 @@ async def _generate_agent_views_async(
                     "confidence": float(contract.confidence),
                 })
             if not samples:
+                progress_log("views", f"{name}: no valid agent samples — falling back to direct engine")
                 samples = _sample_asset_direct(name, history_pct, cfg, settings)
             if not samples:
                 continue
@@ -240,10 +294,13 @@ def generate_agent_views(
     path = _views_cache_path(names, settings.model, cfg)
     cached = _read_cached_views(path)
     if cached is not None:
+        progress_log("views", f"view cache hit ({Path(path).name}) — {len(cached)} assets, no agent run")
         return cached, True
 
+    t0 = time.monotonic()
     views = asyncio.run(
         _generate_agent_views_async(returns, names, cov_returns, cfg, settings, mcp_settings)
     )
     _write_cached_views(path, settings.model, views)
+    progress_log("views", f"view generation done: {len(views)}/{len(names)} assets (+{_elapsed(t0)})")
     return views, False

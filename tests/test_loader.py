@@ -76,6 +76,18 @@ class TestFetchPrices:
         with pytest.raises(ValueError, match="No price data"):
             fetch_prices("AAA", 0, 1)
 
+    def test_null_timestamp_keeps_matching_close_alignment(self, monkeypatch):
+        payload = {
+            "chart": {"result": [{
+                "timestamp": [1767225600, None, 1767398400],
+                "indicators": {"quote": [{"close": [10.0, 11.0, 12.0]}]},
+            }]}
+        }
+        monkeypatch.setattr(loader_mod.requests, "get", lambda *a, **k: FakeResponse(payload))
+        table = fetch_prices("AAA", 0, 1)
+        assert list(table["AAA"]) == [10.0, 12.0]
+        assert len(table) == 2
+
 
 class TestLoadTable:
     def test_uses_cache_when_present(self, monkeypatch):
@@ -300,3 +312,10 @@ class TestPrepareReturns:
     def test_monthly_resample(self):
         data, returns = prepare_returns(self._data(), resample="month")
         assert len(data) == 1
+
+    def test_resampling_does_not_mutate_input(self):
+        source = self._data()
+        original = source.copy(deep=True)
+        prepare_returns(source, resample="week")
+        assert source.equals(original)
+        assert "step" not in source.columns

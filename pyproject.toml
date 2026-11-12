@@ -30,6 +30,7 @@ dependencies = [
 dev = [
     "pytest",
     "httpx",
+    "playwright (>=1.63.0,<2.0.0)",
 ]
 
 [build-system]
@@ -38,5 +39,8 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poe.tasks]
 opt = "python main.py"
-web = "uvicorn web.main:app --reload --host 0.0.0.0 --port 8000"
+select = "python select.py"
+web = "uvicorn web.main:app --reload --host 0.0.0.0 --port 8000 --reload-exclude 'temp/*' --reload-exclude '*.csv' --reload-exclude '.env'"
 test = "pytest tests/ -v"
+verify-ui = "python scripts/verify_ui.py"
+mock-llm = "python scripts/mock_openai_server.py"

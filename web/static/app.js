@@ -3,8 +3,6 @@ const form = document.getElementById('optimizer-form');
 const resultsDiv = document.getElementById('results');
 const errorMsg = document.getElementById('error-msg');
 const btnRun = document.getElementById('btn-run');
-const spinner = document.getElementById('spinner');
-const spinnerText = document.getElementById('spinner-text');
 const jsonBlock = document.getElementById('json-block');
 const copyBtn = document.getElementById('copy-btn');
 let lastJson = '';
@@ -14,6 +12,7 @@ const themeToggle = document.getElementById('theme-toggle');
 function applyTheme(name) {
     document.documentElement.setAttribute('data-theme', name);
     themeToggle.innerHTML = name === 'dark' ? '&#x1F319; Dark' : '&#x2600;&#xFE0E; Light';
+    themeToggle.setAttribute('aria-pressed', String(name === 'dark'));
 }
 applyTheme(document.documentElement.getAttribute('data-theme') || 'dark');
 themeToggle.addEventListener('click', () => {
@@ -43,7 +42,8 @@ document.getElementById('btn-reset').addEventListener('click', () => {
 document.querySelectorAll('.collapse-header').forEach(header => {
     header.addEventListener('click', (e) => {
         e.stopPropagation();
-        header.parentElement.classList.toggle('open');
+        const open = header.parentElement.classList.toggle('open');
+        header.setAttribute('aria-expanded', String(open));
     });
 });
 
@@ -100,6 +100,15 @@ function assetLabel(name) {
     return `<span class="asset-ticker">${escapeHtml(t)}</span><span class="asset-isin">${escapeHtml(name)}</span>`;
 }
 
+function safeExternalUrl(value) {
+    try {
+        const url = new URL(String(value), window.location.origin);
+        return (url.protocol === 'https:' || url.protocol === 'http:') ? url.href : null;
+    } catch (e) {
+        return null;
+    }
+}
+
 function parseTickers(text) {
     const seen = new Set();
     const tickers = [];
@@ -135,12 +144,12 @@ function buildPerTickerRows() {
         row.innerHTML = `
             <span class="pt-name">${assetLabel(t)}</span>
             <div class="pt-bound">
-                <input type="range" class="pt-range" min="0" max="1" step="0.01" value="${v.min}">
-                <input type="number" class="pt-num" min="0" max="1" step="0.01" value="${v.min}">
+                <input type="range" class="pt-range" min="0" max="1" step="0.01" value="${v.min}" aria-label="${escapeHtml(t)} minimum weight">
+                <input type="number" class="pt-num" min="0" max="1" step="0.01" value="${v.min}" aria-label="${escapeHtml(t)} minimum weight">
             </div>
             <div class="pt-bound">
-                <input type="range" class="pt-range" min="0" max="1" step="0.01" value="${v.max}">
-                <input type="number" class="pt-num" min="0" max="1" step="0.01" value="${v.max}">
+                <input type="range" class="pt-range" min="0" max="1" step="0.01" value="${v.max}" aria-label="${escapeHtml(t)} maximum weight">
+                <input type="number" class="pt-num" min="0" max="1" step="0.01" value="${v.max}" aria-label="${escapeHtml(t)} maximum weight">
             </div>
         `;
         perTickerRows.appendChild(row);
@@ -257,32 +266,14 @@ form.addEventListener('submit', async (e) => {
     copyBtn.style.display = 'none';
     btnRun.disabled = true;
     btnRun.innerHTML = '&#x231B; Running...';
-    spinnerText.textContent = 'Fetching data...';
-    spinner.classList.add('visible');
+    resultsDiv.setAttribute('aria-busy', 'true');
 
     syncPerTickerPayload();
     syncKellyFraction();
     const fd = new FormData(form);
 
     try {
-        spinnerText.textContent = 'Fetching market data...';
-        const res = await fetch('/optimize', {
-            method: 'POST',
-            body: fd,
-        });
-
-        if (!res.ok) {
-            try {
-                const errData = await res.json();
-                renderError(errData.traceback || errData.error || 'Unknown server error');
-            } catch {
-                const err = await res.text();
-                renderError(err || 'Unknown server error');
-            }
-            return;
-        }
-
-        const data = await res.json();
+        const data = await window.runProgressJob('/optimize', fd, 'Optimizer progress', 'Submitting optimization request…');
         if (data.error) {
             renderError(data.error);
             return;
@@ -295,27 +286,35 @@ form.addEventListener('submit', async (e) => {
     } finally {
         btnRun.disabled = false;
         btnRun.innerHTML = '&#x27A1; Run Optimization';
-        spinner.classList.remove('visible');
+        resultsDiv.setAttribute('aria-busy', 'false');
     }
 });
 
 // ── Render results ─────────────────────────────────────────────────
+function numberOr(value, fallback = 0) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+}
+
 function renderResults(data) {
     document.getElementById('result-strategy').textContent = data.strategy || '';
 
     // Weights table
     const tbody = document.getElementById('weights-body');
     tbody.innerHTML = '';
-    if (data.weights) {
-        const maxW = Math.max(...data.weights.map(w => w.weight_pct));
-        for (const w of data.weights) {
+    const weightRows = Array.isArray(data.weights) ? data.weights : [];
+    if (weightRows.length) {
+        const maxW = Math.max(0, ...weightRows.map(w => numberOr(w.weight_pct)));
+        for (const w of weightRows) {
+            const weight = numberOr(w.weight_pct);
+            const usd = numberOr(w.usd);
             const tr = document.createElement('tr');
-            const barW = maxW > 0 ? (w.weight_pct / maxW * 100) : 0;
+            const barW = maxW > 0 ? (weight / maxW * 100) : 0;
             tr.innerHTML = `
-                <td class="ticker">${assetLabel(w.ticker)}</td>
+                <td class="ticker">${assetLabel(w.ticker || '')}</td>
                 <td class="bar-cell"><div class="bar" style="width:${barW}%"></div></td>
-                <td class="pct">${w.weight_pct.toFixed(2)}%</td>
-                <td class="usd">$${w.usd.toFixed(2)}</td>
+                <td class="pct">${weight.toFixed(2)}%</td>
+                <td class="usd">$${usd.toFixed(2)}</td>
             `;
             tbody.appendChild(tr);
         }
@@ -324,12 +323,14 @@ function renderResults(data) {
     // Portfolio stats
     const statsDiv = document.getElementById('portfolio-stats');
     statsDiv.innerHTML = '';
-    const retPct = data.portfolio_return_pct || 0;
-    const growthPct = data.growth_rate_pct || 0;
+    const retPct = numberOr(data.portfolio_return_pct);
+    const growthPct = numberOr(data.growth_rate_pct);
+    const stdPct = numberOr(data.portfolio_std_pct);
+    const sharpe = numberOr(data.sharpe_ratio);
     const stats = [
-        { label: 'Expected Return (annualized)', value: retPct.toFixed(2) + '%', cls: retPct >= 0 ? 'positive' : 'negative', sub: 'Daily mean * 365' },
-        { label: 'Std Deviation (annualized)', value: (data.portfolio_std_pct || 0).toFixed(2) + '%', cls: 'accent', sub: 'Daily std * sqrt(365)' },
-        { label: 'Sharpe Ratio', value: (data.sharpe_ratio || 0).toFixed(4), cls: 'warning', sub: '(Return - RF) / StdDev' },
+        { label: 'Expected Return (annualized)', value: retPct.toFixed(2) + '%', cls: retPct >= 0 ? 'positive' : 'negative', sub: 'Trading-day mean * 252' },
+        { label: 'Std Deviation (annualized)', value: stdPct.toFixed(2) + '%', cls: 'accent', sub: 'Daily std * sqrt(252)' },
+        { label: 'Sharpe Ratio', value: sharpe.toFixed(4), cls: 'warning', sub: '(Return - RF) / StdDev' },
         { label: 'Growth Rate (geometric)', value: growthPct.toFixed(2) + '%', cls: growthPct >= 0 ? 'positive' : 'negative', sub: 'Expected long-run compound rate' },
     ];
     for (const s of stats) {
@@ -436,20 +437,23 @@ function renderResults(data) {
         llmNote.innerHTML = noteHtml;
         for (const a of lv.assets) {
             const tr = document.createElement('tr');
+            const predicted = numberOr(a.predicted_daily_return_pct);
+            const viewStd = numberOr(a.view_std_pct);
+            const samplesOk = numberOr(a.samples_ok);
             const rationale = a.rationale
                 ? `<div class="llm-rationale">${escapeHtml(a.rationale)}</div>`
                 : '<span class="muted">direct samples (history only)</span>';
-            const srcs = (a.sources || []);
+            const srcs = (a.sources || []).filter(u => safeExternalUrl(u));
             const srcLinks = srcs.slice(0, 3).map(u =>
-                `<a href="${escapeHtml(u)}" target="_blank" rel="noopener">source</a>`).join(' ');
+                `<a href="${escapeHtml(safeExternalUrl(u))}" target="_blank" rel="noopener noreferrer">source</a>`).join(' ');
             const srcCell = srcs.length
                 ? `${srcLinks}${srcs.length > 3 ? ` <span class="muted">+${srcs.length - 3} more</span>` : ''}`
                 : '<span class="muted">&mdash;</span>';
             tr.innerHTML = `
                 <td class="ticker">${assetLabel(a.ticker)}</td>
-                <td class="pct">${a.predicted_daily_return_pct >= 0 ? '+' : ''}${a.predicted_daily_return_pct.toFixed(4)}%</td>
-                <td class="pct">${a.view_std_pct.toFixed(4)}%</td>
-                <td class="usd">${a.samples_ok}</td>
+                <td class="pct">${predicted >= 0 ? '+' : ''}${predicted.toFixed(4)}%</td>
+                <td class="pct">${viewStd.toFixed(4)}%</td>
+                <td class="usd">${samplesOk}</td>
                 <td class="pct">${rationale}</td>
                 <td class="usd">${srcCell}</td>
             `;
@@ -517,6 +521,7 @@ copyBtn.addEventListener('click', () => {
 function renderError(message) {
     errorMsg.innerHTML = '<div class="error-title">&#x26A0; Error</div><div class="error-detail">' + escapeHtml(message) + '</div>';
     errorMsg.classList.add('visible');
+    errorMsg.focus({ preventScroll: true });
     errorMsg.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -525,3 +530,13 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+
+// Prefill tickers when arriving from the Selection page (?shares=NVDA,MSFT,...)
+(function prefillShares() {
+    const params = new URLSearchParams(location.search);
+    const shares = params.get('shares');
+    if (!shares) return;
+    sharesInput.value = shares;
+    buildPerTickerRows();
+    history.replaceState(null, '', location.pathname);
+})();

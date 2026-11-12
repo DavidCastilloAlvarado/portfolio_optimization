@@ -1,5 +1,6 @@
 """Portfolio optimization configuration."""
 
+import math
 from dataclasses import dataclass, field
 from typing import List
 
@@ -65,6 +66,14 @@ class Config:
     llm_agent_max_tokens: int = 32768  # Completion token budget per agent LLM call, reasoning + output (fits long research notes)
     llm_agent_recursion_limit: int = 40  # LangGraph supersteps per agent sample (2N+1 steps for N tool calls)
 
+    # ── Selection (S&P 100 funnel) ────────────────────────────────────
+    selection_top_n: int = 10  # Final number of names (8-16), no ETFs
+    selection_sector_quant_weight: float = 0.6  # Quant weight in the blended sector score (rest: LLM briefing)
+    selection_name_llm_weight: float = 0.5  # LLM conviction weight in the final per-name score
+    selection_event_risk_days: int = 5  # Flag names with earnings inside this many days
+    selection_recursion_limit: int = 160  # LangGraph supersteps for the market-briefing agent (many searches)
+    selection_verdict_concurrency: int = 2  # Independent name agents; lower for smaller local models
+
     # ── Investment ────────────────────────────────────────────────────
     monto_usd: float = 10000.0
     monthly_delta: float = 300.0
@@ -106,14 +115,30 @@ class Config:
         """Build Config from a flat dict (e.g. FastAPI form data)."""
         shares = data.get("shares", [])
         if isinstance(shares, str):
-            shares = [s.strip() for s in shares.split(",") if s.strip()]
+            shares = [s.strip().upper() for s in shares.split(",") if s.strip()]
+        elif isinstance(shares, (list, tuple)):
+            shares = [str(s).strip().upper() for s in shares if str(s).strip()]
+        else:
+            shares = []
+        shares = list(dict.fromkeys(shares))
 
         w_limits_raw = data.get("w_limits", "")
         if isinstance(w_limits_raw, str) and w_limits_raw.strip():
-            parts = [float(x.strip()) for x in w_limits_raw.split(",") if x.strip()]
+            try:
+                parts = [float(x.strip()) for x in w_limits_raw.split(",") if x.strip()]
+            except ValueError:
+                parts = []
             w_limits = tuple(parts) if len(parts) == 2 else (0.02, 0.12)
         else:
             w_limits = (0.02, 0.12)
+        if (
+            len(w_limits) != 2
+            or not all(math.isfinite(float(value)) for value in w_limits)
+            or w_limits[0] < 0
+            or w_limits[1] > 1
+            or w_limits[0] > w_limits[1]
+        ):
+            raise ValueError("w_limits must satisfy 0 <= min <= max <= 1")
 
         w_limits_per_ticker: dict = {}
         raw_per = data.get("w_limits_per_ticker", "")
@@ -168,9 +193,25 @@ class Config:
         llm_agent_max_tokens = _parse_int(data.get("llm_agent_max_tokens", ""), 32768, 512, 32768)
         llm_agent_recursion_limit = _parse_int(data.get("llm_agent_recursion_limit", ""), 40, 5, 200)
 
+        selection_top_n = _parse_int(data.get("selection_top_n", ""), 10, 8, 16)
+        selection_sector_quant_weight = _parse_float(data.get("selection_sector_quant_weight", ""), 0.6, 0.0, 1.0)
+        selection_name_llm_weight = _parse_float(data.get("selection_name_llm_weight", ""), 0.5, 0.0, 1.0)
+        selection_event_risk_days = _parse_int(data.get("selection_event_risk_days", ""), 5, 0, 30)
+        selection_recursion_limit = _parse_int(data.get("selection_recursion_limit", ""), 160, 20, 200)
+        selection_verdict_concurrency = _parse_int(data.get("selection_verdict_concurrency", ""), 2, 1, 8)
+
+        resample = str(data.get("resample", "none")).strip().lower()
+        if resample not in ("none", "week", "month"):
+            resample = "none"
+        days = _parse_int(data.get("days", ""), 720, 30, 3650)
+        sim_days = _parse_int(data.get("sim_days", ""), 252, 1, 3650)
+        monto_usd = _parse_float(data.get("monto_usd", ""), 10000.0, 0.0, 1e12)
+        monthly_delta = _parse_float(data.get("monthly_delta", ""), 300.0, 0.0, 1e12)
+        risk_free_annual_perc = _parse_float(data.get("risk_free_annual_perc", ""), 5.0, -100.0, 1000.0)
+
         return cls(
-            resample=data.get("resample", "none"),
-            days=int(data.get("days", 720)),
+            resample=resample,
+            days=days,
             shares=shares,
             w_limits=w_limits,
             min_variance=min_variance,
@@ -186,9 +227,15 @@ class Config:
             llm_agent_websearch=llm_agent_websearch,
             llm_agent_max_tokens=llm_agent_max_tokens,
             llm_agent_recursion_limit=llm_agent_recursion_limit,
+            selection_top_n=selection_top_n,
+            selection_sector_quant_weight=selection_sector_quant_weight,
+            selection_name_llm_weight=selection_name_llm_weight,
+            selection_event_risk_days=selection_event_risk_days,
+            selection_recursion_limit=selection_recursion_limit,
+            selection_verdict_concurrency=selection_verdict_concurrency,
             w_limits_per_ticker=w_limits_per_ticker,
-            monto_usd=float(data.get("monto_usd", 10000)),
-            monthly_delta=float(data.get("monthly_delta", 300)),
-            sim_days=int(data.get("sim_days", 252)),
-            risk_free_annual_perc=float(data.get("risk_free_annual_perc", 5)),
+            monto_usd=monto_usd,
+            monthly_delta=monthly_delta,
+            sim_days=sim_days,
+            risk_free_annual_perc=risk_free_annual_perc,
         )

@@ -48,6 +48,11 @@ class TestEquilibriumPrior:
         assert w[1] == pytest.approx(1 / 3)
         assert w.sum() == pytest.approx(1.0)
 
+    def test_inverse_vol_zero_volatility_is_finite(self):
+        w = blm.inverse_vol_weights(np.diag([0.0, 4e-4]))
+        assert np.all(np.isfinite(w))
+        assert w.sum() == pytest.approx(1.0)
+
 
 class TestBlackLittermanPosterior:
     def test_views_equal_prior_returns_prior(self):
@@ -89,6 +94,9 @@ class TestParseViewResponse:
         ('The forecast is {"predicted_avg_daily_return_pct": -0.05}.', -0.05),
         ('0.42', 0.42),
         ('{"value": 2}', 2.0),
+        ('forecast over 14 days is +0.2', 0.2),
+        ('the horizon is 14 days', None),
+        ('{"value": NaN}', None),
         ('I expect steady growth', None),
     ])
     def test_parsing(self, text, expected):
@@ -139,6 +147,26 @@ class TestGenerateViews:
         assert from_cache2 is True
         assert set(views2.keys()) == {"AAA"}
         assert views2["AAA"]["q"] == pytest.approx(0.10 / 100)
+
+    def test_each_sample_sends_a_distinct_prompt(self, monkeypatch, tmp_path, ret_frame, cov_frame):
+        prompts: list[list[str]] = []
+
+        def fake_chat(prompt, settings=None, temperature=0.8, max_tokens=160, extra_body=None):
+            prompts.append([m["content"] for m in prompt])
+            return '{"predicted_avg_daily_return_pct": 0.10}'
+
+        monkeypatch.setattr(blm, "chat_completion", fake_chat)
+        monkeypatch.setattr(cache_mod, "CACHE_DIR", str(tmp_path))
+        cfg = Config(llm_view_engine="direct", llm_samples=3, blm_history_days=30)
+
+        blm.generate_views(ret_frame, ["AAA"], cov_frame, cfg, settings=SETTINGS)
+
+        assert len(prompts) == 3
+        assert len({p[1] for p in prompts}) == 3
+        assert {p[0] for p in prompts} == {blm.SYSTEM_PROMPT.format(horizon=cfg.blm_horizon_days)}
+        for k, user in enumerate((p[1] for p in prompts), start=1):
+            assert user.splitlines()[0].startswith(f"This is the sample {k} of 3.")
+            assert "Asset: " in user
 
     def test_omega_floor_applied_on_zero_variance(self, monkeypatch, tmp_path, ret_frame, cov_frame):
         def fake_chat(prompt, settings=None, temperature=0.8, max_tokens=160, extra_body=None):

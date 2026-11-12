@@ -36,10 +36,12 @@ from config.defaults import Config
 from config.llm import LLMSettings
 from core.data import cache as price_cache
 from core.data.loader import ticker_for
+from core.progress import progress_log
 from models.llm_client import chat_completion
 
 OMEGA_FLOOR_FRACTION = 0.25
 VIEW_TEMPERATURE = 0.8
+VIEW_PROMPT_VERSION = 2
 MIN_HISTORY_OBS = 10
 MAX_PLAUSIBLE_DAILY_PCT = 50.0
 VIEW_MAX_TOKENS_FAST = 512
@@ -71,9 +73,15 @@ def build_equilibrium_prior(
 
 
 def inverse_vol_weights(cov_returns: np.ndarray) -> np.ndarray:
-    """Risk-budgeting weights: w_i proportional to 1/vol_i, normalized to sum 1."""
-    vols = np.sqrt(np.diag(np.asarray(cov_returns, dtype=float)))
-    inv = 1.0 / vols
+    """Risk-budgeting weights: w_i proportional to 1/vol_i."""
+    cov = np.asarray(cov_returns, dtype=float)
+    if cov.ndim != 2 or cov.shape[0] != cov.shape[1] or not np.all(np.isfinite(cov)):
+        raise ValueError("covariance matrix must be a finite square matrix")
+    variances = np.maximum(np.diag(cov), 0.0)
+    vols = np.sqrt(variances)
+    inv = np.divide(1.0, vols, out=np.zeros_like(vols), where=vols > 1e-12)
+    if not np.any(inv):
+        return np.ones(len(vols)) / len(vols)
     return inv / inv.sum()
 
 
@@ -119,7 +127,7 @@ def black_litterman_posterior(
 
 
 def _parse_view_response(text: str) -> float | None:
-    """Extract a predicted average daily return (percent per day) from an LLM response."""
+    """Extract a finite predicted average daily return in percent-per-day units."""
     text = (text or "").strip()
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if match:
@@ -127,23 +135,63 @@ def _parse_view_response(text: str) -> float | None:
             obj = json.loads(match.group(0))
             for key in ("predicted_avg_daily_return_pct", "avg_daily_return_pct", "value"):
                 if key in obj:
-                    return float(obj[key])
+                    value = float(obj[key])
+                    return value if np.isfinite(value) else None
         except (ValueError, TypeError):
             pass
-    match = re.search(r"-?\d+(?:\.\d+)?", text)
+    if re.fullmatch(r"[-+]?\d+(?:\.\d+)?", text):
+        value = float(text)
+        return value if np.isfinite(value) else None
+    match = re.search(
+        r"(?:forecast|predicted|expected|average daily return).*?"
+        r"(?:is|:)\s*([-+]?\d+(?:\.\d+)?)",
+        text,
+        re.IGNORECASE,
+    )
+    if not match:
+        match = re.search(
+            r"(?:forecast|predicted|expected|average daily return)\s*"
+            r"([-+]?\d+(?:\.\d+)?)",
+            text,
+            re.IGNORECASE,
+        )
     if match:
-        return float(match.group(0))
+        value = float(match.group(1))
+        return value if np.isfinite(value) else None
     return None
 
 
-def _build_prompt(name: str, cfg: Config, history_pct: np.ndarray) -> list[dict]:
+def _sample_marker(sample_index: int, total: int) -> str:
+    """Per-sample opener so no two samples share a prompt prefix.
+
+    An identical prompt for every sample lets the provider reuse its prompt
+    cache across samples (same prefix, same cached reasoning), which defeats the
+    point of independent sampling. The marker goes FIRST in the user message:
+    prefix caching matches the longest identical prefix, so a trailing marker
+    would leave everything before it cacheable.
+    """
+    return (
+        f"This is the sample {sample_index} of {total}. Treat it as one "
+        f"independent forecast of this asset, not as a continuation of any "
+        f"other sample."
+    )
+
+
+def _build_prompt(
+    name: str,
+    cfg: Config,
+    history_pct: np.ndarray,
+    sample_index: int | None = None,
+) -> list[dict]:
     symbol = ticker_for(name)
     if symbol:
         ident = f"ETF {name} (display ticker: {symbol})"
     else:
         ident = f"Stock {name}"
     hist = ", ".join(f"{v:.2f}" for v in history_pct)
+    marker = "" if sample_index is None else _sample_marker(sample_index, cfg.llm_samples) + "\n"
     user = (
+        f"{marker}"
         f"Asset: {ident}\n"
         f"Past {len(history_pct)} daily returns, percent per day, oldest first: [{hist}]\n"
         f"Forecast the average daily return (percent per day) for the next "
@@ -159,6 +207,7 @@ def _build_prompt(name: str, cfg: Config, history_pct: np.ndarray) -> list[dict]
 def _views_cache_path(names: list[str], model: str, cfg: Config) -> str:
     key_src = "|".join([
         model,
+        f"prompt{VIEW_PROMPT_VERSION}",
         cfg.llm_view_engine,
         cfg.llm_reasoning_effort,
         str(cfg.llm_agent_websearch),
@@ -243,9 +292,9 @@ def _sample_asset_direct(
     cfg: Config,
     settings: LLMSettings,
 ) -> list[float]:
-    prompt = _build_prompt(name, cfg, history_pct)
     samples: list[float] = []
-    for _ in range(cfg.llm_samples):
+    for k in range(cfg.llm_samples):
+        prompt = _build_prompt(name, cfg, history_pct, sample_index=k + 1)
         try:
             raw = _call_for_sample(prompt, settings)
         except RuntimeError:
@@ -329,6 +378,7 @@ def _generate_engine_views(
     missing MCP server, Chrome, or agent error never blocks the run.
     """
     if cfg.llm_view_engine != "agent" or not cfg.llm_agent_websearch:
+        progress_log("views", "view engine: direct (history-only, no web research)")
         return generate_views(returns, names, cov, cfg, settings=settings)
 
     from config.llm import WebSearchMCPSettings
@@ -336,14 +386,21 @@ def _generate_engine_views(
 
     mcp_settings = WebSearchMCPSettings.from_env()
     if not mcp_settings.is_configured:
+        progress_log("views", "view engine: direct (web-search MCP not configured)")
         return generate_views(returns, names, cov, cfg, settings=settings)
 
+    progress_log(
+        "views",
+        f"view engine: agent (model {settings.model}, effort {cfg.llm_reasoning_effort}, "
+        f"{cfg.llm_samples} samples/asset, horizon {cfg.blm_horizon_days}d)",
+    )
     try:
         return llm_agent.generate_agent_views(
             returns, names, cov, cfg,
             settings=settings, mcp_settings=mcp_settings,
         )
-    except Exception:
+    except Exception as exc:
+        progress_log("views", f"agent engine failed ({exc}) — falling back to direct engine")
         return generate_views(returns, names, cov, cfg, settings=settings)
 
 
@@ -365,6 +422,11 @@ def run_blm(
     cov = np.asarray(cov_returns, dtype=float)
     weights = inverse_vol_weights(cov) if cfg.blm_prior == "inverse_vol" else None
     prior = build_equilibrium_prior(cov, cfg.llm_tau, weights)
+    progress_log(
+        "blm",
+        f"equilibrium prior built ({cfg.blm_prior}, tau={cfg.llm_tau}, {len(names)} assets) — "
+        f"annualized drift range {float(np.min(prior) * 252 * 100):.1f}%..{float(np.max(prior) * 252 * 100):.1f}%",
+    )
 
     views: dict = {}
     from_cache = False
@@ -374,6 +436,7 @@ def run_blm(
         views, from_cache = {}, False
 
     view_names = [n for n in names if n in views]
+    progress_log("blm", f"views ready: {len(view_names)}/{len(names)} assets (from_cache={from_cache})")
     if view_names:
         idx = [names.index(n) for n in view_names]
         P = np.zeros((len(view_names), len(names)))
@@ -383,9 +446,15 @@ def run_blm(
         omega = np.diag([views[n]["omega"] for n in view_names])
         posterior = black_litterman_posterior(prior, cov, P, q, omega, cfg.llm_tau)
         degraded = False
+        progress_log(
+            "blm",
+            f"posterior computed ({len(view_names)} views) — annualized drift range "
+            f"{float(np.min(posterior) * 252 * 100):.1f}%..{float(np.max(posterior) * 252 * 100):.1f}%",
+        )
     else:
         posterior = prior
         degraded = True
+        progress_log("blm", "no valid views — using pure equilibrium prior (degraded)")
 
     return {
         "posterior_mean": posterior,

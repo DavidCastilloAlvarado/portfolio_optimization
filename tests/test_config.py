@@ -203,3 +203,43 @@ class TestStrategyResolution:
         for raw in (True, "true", "on", "1", 1):
             cfg = Config.from_dict({"strategy": "llm_bl", "llm_agent_websearch": raw})
             assert cfg.llm_agent_websearch is True
+    def test_from_dict_selection_fields(self):
+        cfg = Config.from_dict({
+            "selection_top_n": "14",
+            "selection_sector_quant_weight": "0.75",
+            "selection_name_llm_weight": "0.3",
+            "selection_event_risk_days": "7",
+            "selection_recursion_limit": "120",
+            "selection_verdict_concurrency": "4",
+        })
+        assert cfg.selection_top_n == 14
+        assert cfg.selection_sector_quant_weight == pytest.approx(0.75)
+        assert cfg.selection_name_llm_weight == pytest.approx(0.3)
+        assert cfg.selection_event_risk_days == 7
+        assert cfg.selection_recursion_limit == 120
+        assert cfg.selection_verdict_concurrency == 4
+
+    def test_from_dict_selection_defaults(self):
+        cfg = Config.from_dict({})
+        assert cfg.selection_top_n == 10
+        assert cfg.selection_sector_quant_weight == pytest.approx(0.6)
+        assert cfg.selection_name_llm_weight == pytest.approx(0.5)
+        assert cfg.selection_event_risk_days == 5
+        assert cfg.selection_recursion_limit == 160
+        assert cfg.selection_verdict_concurrency == 2
+
+    def test_from_dict_selection_clamped(self):
+        cfg = Config.from_dict({
+            "selection_top_n": "999",
+            "selection_sector_quant_weight": "5",
+            "selection_name_llm_weight": "-3",
+            "selection_event_risk_days": "999",
+            "selection_recursion_limit": "1",
+            "selection_verdict_concurrency": "99",
+        })
+        assert cfg.selection_top_n == 16
+        assert cfg.selection_sector_quant_weight == pytest.approx(1.0)
+        assert cfg.selection_name_llm_weight == pytest.approx(0.0)
+        assert cfg.selection_event_risk_days == 30
+        assert cfg.selection_recursion_limit == 20
+        assert cfg.selection_verdict_concurrency == 8

@@ -58,6 +58,14 @@ def chat_completion(
 
     try:
         body = resp.json()
-        return str(body["choices"][0]["message"]["content"])
+        content = body["choices"][0]["message"].get("content")
+        if isinstance(content, str) and content.strip():
+            return content
+        if isinstance(content, list):
+            parts = [part.get("text", "") for part in content if isinstance(part, dict)]
+            text = "".join(parts).strip()
+            if text:
+                return text
+        raise ValueError("assistant message has no text content")
     except (ValueError, KeyError, IndexError, TypeError) as e:
         raise RuntimeError(f"Malformed LLM response: {e}") from e

@@ -60,14 +60,26 @@ def run_backtest(
     monthly_delta=0.0,
     price_loader: Callable | None = None,
 ):
-    """Backward simulation using real historical data from CSV files.
+    """Run lump-sum and optional DCA backtests using cached historical prices."""
+    if monto <= 0 or monthly_delta < 0 or n_days < 2:
+        return {"error": "Investment and simulation inputs must be positive."}
+    if len(shares) != len(weights) or not shares:
+        return {"error": "Shares and weights must contain the same non-empty assets."}
+    if not np.all(np.isfinite(np.asarray(weights, dtype=float))):
+        return {"error": "Portfolio weights must be finite."}
 
-    Returns a dict with lump-sum and DCA results.
-    """
     loader = price_loader or _load_backtest_prices
     prices = loader(shares, n_days)
-    if prices.empty or len(prices) < 2:
+    if not isinstance(prices, pd.DataFrame) or prices.empty or len(prices) < 2:
         return {"error": "Not enough price data for backtest."}
+
+    missing = [share for share, weight in zip(shares, weights) if weight > 0 and share not in prices.columns]
+    if missing:
+        return {"error": f"Missing price data for invested assets: {', '.join(missing)}."}
+    available = [share for share in shares if share in prices.columns]
+    prices = prices[available].sort_index().dropna()
+    if len(prices) < 2:
+        return {"error": "Not enough aligned price data for backtest."}
 
     daily_returns = prices.pct_change().dropna()
     w_map = dict(zip(shares, weights))
@@ -107,17 +119,24 @@ def run_backtest(
         portfolio_value = monto
         total_invested = monto
         values_dca = [portfolio_value]
+        dca_returns = []
 
         for i, r in enumerate(portfolio_returns):
+            previous_value = portfolio_value
             portfolio_value *= (1 + r)
-            if (i + 1) % TRADING_DAYS_PER_MONTH == 0:
-                portfolio_value += monthly_delta
-                total_invested += monthly_delta
+            contribution = monthly_delta if (i + 1) % TRADING_DAYS_PER_MONTH == 0 else 0.0
+            if contribution:
+                portfolio_value += contribution
+                total_invested += contribution
+            dca_returns.append(
+                (portfolio_value - contribution) / previous_value - 1.0
+                if previous_value > 0 else 0.0
+            )
             values_dca.append(portfolio_value)
 
         values_dca = np.array(values_dca)
         ret_pct_dca, max_dd_dca, sharpe_dca, _ = _compute_stats(
-            values_dca, total_invested, portfolio_returns, risk_free_annual)
+            values_dca, total_invested, dca_returns, risk_free_annual)
 
         months_contributed = trading_days // TRADING_DAYS_PER_MONTH
         result["dca"] = {
